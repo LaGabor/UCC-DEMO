@@ -1,0 +1,50 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('conversation_messages', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('conversation_id')
+                ->constrained()
+                ->cascadeOnDelete();
+            $table->enum('sender_type', [
+                'user',
+                'bot',
+                'agent',
+                'system',
+            ]);
+            $table->foreignId('sender_user_id')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
+            $table->enum('message_type', [
+                'question',
+                'bot_answer',
+                'agent_answer',
+                'system_notice',
+            ]);
+            $table->enum('language', [
+                'hu',
+                'en',
+            ])->default('hu');
+            $table->text('message_text')->nullable();
+            $table->string('answer_code')->nullable();
+            $table->timestamps();
+            $table->index(['conversation_id', 'created_at']);
+            $table->index(['sender_user_id', 'created_at']);
+            $table->index(['sender_type', 'created_at']);
+            $table->fullText('message_text');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('conversation_messages');
+    }
+};
