@@ -2,7 +2,8 @@
 
 namespace App\Data\Public;
 
-use App\Http\Requests\Api\Public\AcceptUserInvitationRequest;
+use App\Enums\Language;
+use App\Http\Requests\API\Public\AcceptUserInvitationRequest;
 
 class AcceptUserInvitationData
 {
@@ -10,7 +11,7 @@ class AcceptUserInvitationData
         public readonly string $token,
         public readonly string $name,
         public readonly string $password,
-        public readonly string $preferredLocale,
+        public readonly Language $preferredLocale,
     ) {
     }
 
@@ -22,7 +23,7 @@ class AcceptUserInvitationData
             token: $token,
             name: $request->string('name')->toString(),
             password: $request->string('password')->toString(),
-            preferredLocale: $request->string('preferred_locale')->toString(),
+            preferredLocale: Language::from($request->string('preferred_locale')->toString()),
         );
     }
 }

@@ -25,3 +25,4 @@ Thumbs.db
 
 docker/nginx/certs/*.crt
 docker/nginx/certs/*.key
+.pnpm-store/

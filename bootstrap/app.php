@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Support\ApiResponse;
+use App\Exceptions\ApiDomainException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -12,7 +13,6 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Throwable;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -29,6 +29,19 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (ApiDomainException $e, Request $request) {
+            if (! $request->expectsJson()) {
+                return null;
+            }
+
+            return ApiResponse::error(
+                $e->errorCode->value,
+                $e->getMessage(),
+                $e->errors,
+                $e->status->value
+            );
+        });
+
         $exceptions->render(function (ValidationException $e, Request $request) {
             if (! $request->expectsJson()) {
                 return null;
@@ -81,7 +94,7 @@ return Application::configure(basePath: dirname(__DIR__))
             );
         });
 
-        $exceptions->render(function (Throwable $e, Request $request) {
+        $exceptions->render(function (\Throwable $e, Request $request) {
             if (! $request->expectsJson()) {
                 return null;
             }

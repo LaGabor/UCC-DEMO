@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Contracts\Services\PasswordResetServiceInterface;
 use App\Data\Public\CreatePasswordResetRequestData;
 use App\Data\Public\CompletePasswordResetData;
-use App\Http\Requests\Api\Public\StorePasswordResetRequest;
-use App\Http\Requests\Api\Public\CompletePasswordResetRequest;
+use App\Http\Requests\API\Public\StorePasswordResetRequest;
+use App\Http\Requests\API\Public\CompletePasswordResetRequest;
 
 class PasswordResetController extends Controller
 {
@@ -31,7 +31,7 @@ class PasswordResetController extends Controller
         $result = $this->passwordResetService
             ->getResetRequestByToken($token);
 
-        return response()->json($result);
+        return response()->json($result->toArray());
     }
 
     public function update(

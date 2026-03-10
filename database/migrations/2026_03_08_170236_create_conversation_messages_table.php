@@ -13,26 +13,13 @@ return new class extends Migration
             $table->foreignId('conversation_id')
                 ->constrained()
                 ->cascadeOnDelete();
-            $table->enum('sender_type', [
-                'user',
-                'bot',
-                'agent',
-                'system',
-            ]);
+            $table->string('sender_type', 32);
             $table->foreignId('sender_user_id')
                 ->nullable()
                 ->constrained('users')
                 ->nullOnDelete();
-            $table->enum('message_type', [
-                'question',
-                'bot_answer',
-                'agent_answer',
-                'system_notice',
-            ]);
-            $table->enum('language', [
-                'hu',
-                'en',
-            ])->default('hu');
+            $table->string('message_type', 32);
+            $table->string('language', 5)->default('hu');
             $table->text('message_text')->nullable();
             $table->string('answer_code')->nullable();
             $table->timestamps();

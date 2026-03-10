@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Http\Requests\Api\Public;
+namespace App\Http\Requests\API\Public;
 
-use App\Http\Requests\Api\FormRequest;
+use App\Http\Requests\API\FormRequest;
 
 class StorePasswordResetRequest extends FormRequest
 {

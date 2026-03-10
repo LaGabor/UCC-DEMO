@@ -17,16 +17,8 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password')->nullable();
-            $table->enum('role', [
-                'user',
-                'helpdesk_agent',
-                'admin'
-            ])->default('user')->index();
-            $table->enum('status', [
-                'active',
-                'disabled',
-                'pending'
-            ])->default('pending')->index();
+            $table->string('role', 32)->default('user')->index();
+            $table->string('status', 32)->default('pending')->index();
             $table->string('preferred_locale', 5)
                 ->default('en')
                 ->index();
@@ -41,7 +33,7 @@ return new class extends Migration
             $table->id();
             $table->string('email')->index();
             $table->string('token', 64)->unique();
-            $table->enum('type', ['invitation', 'password_reset']);
+            $table->string('type', 32);
             $table->timestamp('created_at')->nullable();
             $table->unique(['email', 'type']);
         });

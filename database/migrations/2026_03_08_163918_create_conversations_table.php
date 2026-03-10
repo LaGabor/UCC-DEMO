@@ -17,15 +17,8 @@ return new class extends Migration
                 ->nullable()
                 ->constrained('users')
                 ->nullOnDelete();
-            $table->enum('status', [
-                'open',
-                'waiting_human',
-                'assigned',
-                'closed',
-            ])->default('open');
-            $table->enum('channel', [
-                'web',
-            ])->default('web');
+            $table->string('status', 32)->default('open');
+            $table->string('channel', 32)->default('web');
             $table->timestamp('last_message_at')->nullable();
             $table->timestamp('closed_at')->nullable();
             $table->timestamps();

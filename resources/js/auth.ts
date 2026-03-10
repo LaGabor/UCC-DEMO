@@ -1,45 +1,26 @@
-import { computed, reactive } from 'vue'
-import axios from 'axios'
-
-export type AuthUser = {
-    id: number
-    name: string
-    email: string
-    role?: string
-    preferred_locale?: string
-    two_factor_confirmed_at?: string | null
-}
-
-type AuthState = {
-    user: AuthUser | null
-    initialized: boolean
-    loading: boolean
-}
-
-const state = reactive<AuthState>({
-    user: null,
-    initialized: false,
-    loading: false,
-})
+import { computed } from 'vue'
+import type { AuthUser } from './types/auth'
+import { UserRole } from './types/enums'
+import { fetchCurrentUser, logoutRequest } from './api/auth'
+import { authState, clearAuthState } from './authState'
 
 async function fetchUser(): Promise<AuthUser | null> {
     try {
-        state.loading = true
-        const response = await axios.get('/api/user')
-        state.user = response.data
-        return state.user
+        authState.loading = true
+        authState.user = await fetchCurrentUser()
+        return authState.user
     } catch {
-        state.user = null
+        authState.user = null
         return null
     } finally {
-        state.loading = false
-        state.initialized = true
+        authState.loading = false
+        authState.initialized = true
     }
 }
 
 async function ensureAuthLoaded(): Promise<void> {
 
-    if (state.initialized) {
+    if (authState.initialized) {
         return
     }
 
@@ -47,23 +28,23 @@ async function ensureAuthLoaded(): Promise<void> {
 }
 
 async function logout(): Promise<void> {
-    await axios.post('/logout')
-    state.user = null
-    state.initialized = true
+    await logoutRequest()
+    authState.user = null
+    authState.initialized = true
 }
 
 function clearAuth(): void {
-    state.user = null
-    state.initialized = false
-    state.loading = false
+    clearAuthState()
 }
 
-const isAuthenticated = computed(() => !!state.user)
+const isAuthenticated = computed(() => !!authState.user)
+const isAdmin = computed(() => authState.user?.role === UserRole.ADMIN)
 
 export function useAuth() {
     return {
-        state,
+        state: authState,
         isAuthenticated,
+        isAdmin,
         fetchUser,
         ensureAuthLoaded,
         logout,

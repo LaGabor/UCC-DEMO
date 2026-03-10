@@ -45,6 +45,7 @@ import { useRoute } from 'vue-router'
 import { appRoutes } from '../router'
 import type { RouteRecordRaw } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useAuth } from '../auth'
 
 defineProps<{
     collapsed: boolean
@@ -52,10 +53,23 @@ defineProps<{
 
 const route = useRoute()
 const { t } = useI18n()
+const auth = useAuth()
 
 const navigationItems = computed(() => {
     return appRoutes
-        .filter((item: RouteRecordRaw) => Boolean(item.meta?.showInSidebar) && Boolean(item.name))
+        .filter((item: RouteRecordRaw) => {
+            if (!item.name || !item.meta?.showInSidebar) {
+                return false
+            }
+
+            const requiredRole = item.meta?.requiredRole as string | undefined
+
+            if (!requiredRole) {
+                return true
+            }
+
+            return auth.state.user?.role === requiredRole
+        })
         .sort((a, b) => Number(a.meta?.navOrder ?? 999) - Number(b.meta?.navOrder ?? 999))
 })
 

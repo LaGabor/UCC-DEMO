@@ -1,30 +1,32 @@
 <?php
 
-namespace App\Http\Requests\Api\Public;
+namespace App\Http\Requests\API\Public;
 
-use App\Http\Requests\Api\FormRequest;
+use App\Enums\Language;
+use App\Http\Requests\API\FormRequest;
+use Illuminate\Validation\Rules\Enum;
 
 class AcceptUserInvitationRequest extends FormRequest
 {
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'min:4', 'max:50'],
             'password' => [
                 'required',
                 'string',
                 'confirmed',
                 'min:8',
-                'regex:/^(?=.*[A-Za-z])(?=.*[^A-Za-z0-9]).+$/',
+                'regex:/^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/',
             ],
-            'preferred_locale' => ['required', 'in:hu,en'],
+            'preferred_locale' => ['required', new Enum(Language::class)],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'password.regex' => 'The password must contain at least one letter and one special character.',
+            'password.regex' => 'The password must contain at least one letter, one number, and one special character.',
         ];
     }
 }

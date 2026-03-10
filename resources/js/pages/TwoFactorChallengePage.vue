@@ -68,11 +68,11 @@
 </template>
 
 <script setup lang="ts">
-import axios from 'axios'
-import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeUnmount, reactive, ref } from 'vue'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../auth'
+import { twoFactorChallengeRequest } from '../api/auth'
 
 const router = useRouter()
 const auth = useAuth()
@@ -91,7 +91,7 @@ async function submit() {
     loading.value = true
 
     try {
-        await axios.post('/two-factor-challenge', {
+        await twoFactorChallengeRequest({
             code: form.code || undefined,
             recovery_code: form.recovery_code || undefined,
         })
@@ -110,4 +110,17 @@ async function submit() {
         loading.value = false
     }
 }
+
+function resetUiState(): void {
+    errorMessage.value = ''
+    loading.value = false
+}
+
+onBeforeRouteLeave(() => {
+    resetUiState()
+})
+
+onBeforeUnmount(() => {
+    resetUiState()
+})
 </script>

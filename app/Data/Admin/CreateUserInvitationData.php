@@ -2,12 +2,14 @@
 
 namespace App\Data\Admin;
 
-use App\Http\Requests\Api\Admin\StoreUserInvitationRequest;
+use App\Enums\UserRole;
+use App\Http\Requests\API\Admin\StoreUserInvitationRequest;
 
 class CreateUserInvitationData
 {
     public function __construct(
         public readonly string $email,
+        public readonly UserRole $role,
         public readonly int $createdByUserId,
     ) {
     }
@@ -16,6 +18,7 @@ class CreateUserInvitationData
     {
         return new self(
             email: mb_strtolower($request->string('email')->toString()),
+            role: UserRole::from($request->string('role')->toString()),
             createdByUserId: (int) $request->user()->id,
         );
     }

@@ -1,13 +1,22 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import LoginPage from '../pages/LoginPage.vue'
 import HomePage from '../pages/HomePage.vue'
 import TwoFactorChallengePage from '../pages/TwoFactorChallengePage.vue'
 import TwoFactorSettingsPage from '../pages/TwoFactorSettingsPage.vue'
+import ForgotPasswordPage from '../pages/ForgotPasswordPage.vue'
+import PasswordResetPage from '../pages/PasswordResetPage.vue'
+import AcceptInvitationPage from '../pages/AcceptInvitationPage.vue'
+import InviteUserPage from '../pages/InviteUserPage.vue'
 import { useAuth } from '../auth'
+import { UserRole } from '../types/enums'
 
 export const ROUTE_NAMES = {
     HOME: 'home',
     LOGIN:'login',
+    FORGOT_PASSWORD: 'forgot-password',
+    PASSWORD_RESET: 'password-reset',
+    INVITATION_ACCEPT: 'invitation-accept',
+    INVITE_USER: 'invite-user',
     TWO_FACTOR_SETTINGS: 'two-factor-settings',
     TWO_FACTOR_CHALLENGE: 'two-factor-challenge',
     NOT_FOUND: 'not-found',
@@ -28,6 +37,33 @@ export const appRoutes: RouteRecordRaw[] = [
         },
     },
     {
+        path: '/forgot-password',
+        name: ROUTE_NAMES.FORGOT_PASSWORD,
+        component: ForgotPasswordPage,
+        meta: {
+            layout: 'guest',
+            guestOnly: true,
+        },
+    },
+    {
+        path: '/password-reset/:token',
+        name: ROUTE_NAMES.PASSWORD_RESET,
+        component: PasswordResetPage,
+        meta: {
+            layout: 'guest',
+            guestOnly: true,
+        },
+    },
+    {
+        path: '/invitations/accept/:token',
+        name: ROUTE_NAMES.INVITATION_ACCEPT,
+        component: AcceptInvitationPage,
+        meta: {
+            layout: 'guest',
+            guestOnly: true,
+        },
+    },
+    {
         path: '/home',
         name: ROUTE_NAMES.HOME,
         component: HomePage,
@@ -41,6 +77,20 @@ export const appRoutes: RouteRecordRaw[] = [
         },
     },
     {
+        path: '/admin/invite-user',
+        name: ROUTE_NAMES.INVITE_USER,
+        component: InviteUserPage,
+        meta: {
+            layout: 'app',
+            requiresAuth: true,
+            requiredRole: UserRole.ADMIN,
+            showInSidebar: true,
+            navLabelKey: 'navigation.inviteUser',
+            navOrder: 2,
+            iconClass: 'bi bi-person-plus',
+        },
+    },
+    {
         path: '/settings/two-factor',
         name: ROUTE_NAMES.TWO_FACTOR_SETTINGS,
         component: TwoFactorSettingsPage,
@@ -49,7 +99,7 @@ export const appRoutes: RouteRecordRaw[] = [
             requiresAuth: true,
             showInSidebar: true,
             navLabelKey: 'navigation.twoFactorSettings',
-            navOrder: 2,
+            navOrder: 3,
             iconClass: 'bi bi-shield-lock',
         },
     },
@@ -80,12 +130,17 @@ router.beforeEach(async (to) => {
     const isLoggedIn = auth.isAuthenticated.value
     const requiresAuth = Boolean(to.meta.requiresAuth)
     const guestOnly = Boolean(to.meta.guestOnly)
+    const requiredRole = to.meta.requiredRole as UserRole | undefined
 
     if (requiresAuth && !isLoggedIn) {
         return { name: ROUTE_NAMES.LOGIN }
     }
 
     if (guestOnly && isLoggedIn) {
+        return { name: ROUTE_NAMES.HOME }
+    }
+
+    if (requiresAuth && requiredRole && auth.state.user?.role !== requiredRole) {
         return { name: ROUTE_NAMES.HOME }
     }
 

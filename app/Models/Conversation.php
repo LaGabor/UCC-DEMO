@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ConversationStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -20,6 +21,7 @@ class Conversation extends Model
     protected $casts = [
         'last_message_at' => 'datetime',
         'closed_at' => 'datetime',
+        'status' => ConversationStatus::class,
     ];
 
     public function user(): BelongsTo

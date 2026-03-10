@@ -112,4 +112,6 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    'pending_user_initial_password' => env('PENDING_USER_INITIAL_PASSWORD'),
+
 ];

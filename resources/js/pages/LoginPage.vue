@@ -12,6 +12,15 @@
                             {{ errorMessage }}
                         </div>
 
+                        <div
+                            v-if="successMessage"
+                            class="alert alert-success alert-dismissible fade show"
+                            role="alert"
+                        >
+                            {{ successMessage }}
+                            <button type="button" class="btn-close" @click="clearSuccess"></button>
+                        </div>
+
                         <form @submit.prevent="submit">
                             <div class="mb-3">
                                 <label for="email" class="form-label">
@@ -67,6 +76,12 @@
                                 </label>
                             </div>
 
+                            <div class="mb-3 text-end">
+                                <router-link :to="{ name: 'forgot-password' }" class="small">
+                                    {{ t('login.forgotPassword') }}
+                                </router-link>
+                            </div>
+
                             <button
                                 type="submit"
                                 class="btn btn-primary w-100"
@@ -89,11 +104,11 @@
 </template>
 
 <script setup lang="ts">
-import axios from 'axios'
-import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../auth'
+import { getCsrfCookie, loginRequest } from '../api/auth'
 
 const router = useRouter()
 const auth = useAuth()
@@ -102,6 +117,7 @@ const { t } = useI18n()
 const showPassword = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
+const successMessage = ref('')
 
 const form = reactive({
     email: '',
@@ -111,12 +127,15 @@ const form = reactive({
 
 async function submit() {
     errorMessage.value = ''
+    successMessage.value = ''
     loading.value = true
 
-    try {
-        await axios.get('/sanctum/csrf-cookie')
+    form.email = form.email.trim()
+    form.password = form.password.trim()
 
-        await axios.post('/login', {
+    try {
+        await getCsrfCookie()
+        await loginRequest({
             email: form.email,
             password: form.password,
             remember: form.remember,
@@ -141,4 +160,34 @@ async function submit() {
         loading.value = false
     }
 }
+
+function clearSuccess(): void {
+    successMessage.value = ''
+    sessionStorage.removeItem('flash_login_success')
+}
+
+function resetUiState(): void {
+    errorMessage.value = ''
+    successMessage.value = ''
+    loading.value = false
+}
+
+onMounted(() => {
+    const flashMessage = sessionStorage.getItem('flash_login_success')
+
+    if (!flashMessage) {
+        return
+    }
+
+    successMessage.value = flashMessage
+    sessionStorage.removeItem('flash_login_success')
+})
+
+onBeforeRouteLeave(() => {
+    resetUiState()
+})
+
+onBeforeUnmount(() => {
+    resetUiState()
+})
 </script>

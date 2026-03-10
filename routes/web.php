@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Hash;
 use Laravel\Fortify\Actions\DisableTwoFactorAuthentication;
 use Laravel\Fortify\Actions\EnableTwoFactorAuthentication;
 use Laravel\Fortify\Actions\GenerateNewRecoveryCodes;
@@ -24,6 +25,19 @@ Route::middleware('auth')->group(function () {
     });
 
     Route::delete('/user/two-factor-authentication', function (Request $request, DisableTwoFactorAuthentication $disable) {
+        $request->validate([
+            'current_password' => ['required', 'string'],
+        ]);
+
+        if (! Hash::check($request->string('current_password')->toString(), $request->user()->password)) {
+            return response()->json([
+                'message' => 'The provided password is incorrect.',
+                'errors' => [
+                    'current_password' => ['The provided password is incorrect.'],
+                ],
+            ], 422);
+        }
+
         $disable($request->user());
 
         return response()->json([
@@ -32,6 +46,19 @@ Route::middleware('auth')->group(function () {
     });
 
     Route::post('/user/two-factor-recovery-codes', function (Request $request, GenerateNewRecoveryCodes $generate) {
+        $request->validate([
+            'current_password' => ['required', 'string'],
+        ]);
+
+        if (! Hash::check($request->string('current_password')->toString(), $request->user()->password)) {
+            return response()->json([
+                'message' => 'The provided password is incorrect.',
+                'errors' => [
+                    'current_password' => ['The provided password is incorrect.'],
+                ],
+            ], 422);
+        }
+
         $generate($request->user());
 
         return response()->json([

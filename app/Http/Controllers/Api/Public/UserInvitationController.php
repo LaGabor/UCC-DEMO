@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api\Public;
 use App\Http\Controllers\Controller;
 use App\Contracts\Services\UserInvitationServiceInterface;
 use App\Data\Public\AcceptUserInvitationData;
-use App\Http\Requests\Api\Public\AcceptUserInvitationRequest;
+use App\Http\Requests\API\Public\AcceptUserInvitationRequest;
 
 class UserInvitationController extends Controller
 {
@@ -17,7 +17,7 @@ class UserInvitationController extends Controller
     {
         $invitation = $this->invitationService->getInvitationByToken($token);
 
-        return response()->json($invitation);
+        return response()->json($invitation->toArray());
     }
 
     public function accept(

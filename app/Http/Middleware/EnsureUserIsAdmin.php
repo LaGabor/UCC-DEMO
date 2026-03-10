@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -20,7 +22,7 @@ class EnsureUserIsAdmin
             ], 401);
         }
 
-        if ($user->role !== 'admin' || $user->status !== 'active') {
+        if ($user->role !== UserRole::ADMIN || $user->status !== UserStatus::ACTIVE) {
             return response()->json([
                 'success' => false,
                 'code' => 'FORBIDDEN',

@@ -2,7 +2,7 @@
 
 namespace App\Data\Public;
 
-use App\Http\Requests\Api\Public\CompletePasswordResetRequest;
+use App\Http\Requests\API\Public\CompletePasswordResetRequest;
 
 class CompletePasswordResetData
 {
