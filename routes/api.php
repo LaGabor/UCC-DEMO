@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\UserInvitationController;
+use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\Public\UserInvitationController as PublicUserInvitationController;
 use App\Http\Controllers\Api\Public\PasswordResetController;
 use Illuminate\Http\Request;
@@ -10,10 +12,24 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+Route::middleware('auth:sanctum')
+    ->put('/user/preferred-locale', [UserController::class, 'updatePreferredLocale'])
+    ->name('api.user.preferred-locale.update');
+
 Route::prefix('admin')
     ->middleware(['auth:sanctum', 'admin'])
     ->group(function () {
         Route::post('/user-invitations', [UserInvitationController::class, 'store']);
+    });
+
+Route::middleware('auth:sanctum')
+    ->prefix('events')
+    ->group(function () {
+        Route::get('/', [EventController::class, 'index'])->name('api.events.index');
+        Route::post('/', [EventController::class, 'store'])->name('api.events.store');
+        Route::get('/{event}', [EventController::class, 'show'])->name('api.events.show');
+        Route::put('/{event}', [EventController::class, 'update'])->name('api.events.update');
+        Route::delete('/{event}', [EventController::class, 'destroy'])->name('api.events.destroy');
     });
 
 Route::prefix('public')->group(function () {

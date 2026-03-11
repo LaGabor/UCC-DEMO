@@ -62,7 +62,7 @@
                         <p class="mb-2">{{ t('twoFactorSettings.qrInfo') }}</p>
                         <div
                             v-if="qrSvg"
-                            class="border rounded p-3 d-inline-block bg-white"
+                            class="border rounded d-inline-block bg-white"
                             v-html="qrSvg"
                         />
                     </div>

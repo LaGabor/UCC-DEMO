@@ -25,4 +25,6 @@ interface UserRepositoryInterface
     ): int;
 
     public function updatePasswordByEmail(string $email, string $password): int;
+
+    public function updatePreferredLocaleByUserId(int $userId, Language $preferredLocale): int;
 }

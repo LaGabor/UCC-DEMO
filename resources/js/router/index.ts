@@ -7,6 +7,8 @@ import ForgotPasswordPage from '../pages/ForgotPasswordPage.vue'
 import PasswordResetPage from '../pages/PasswordResetPage.vue'
 import AcceptInvitationPage from '../pages/AcceptInvitationPage.vue'
 import InviteUserPage from '../pages/InviteUserPage.vue'
+import EventsPage from '../pages/EventsPage.vue'
+import EventFormPage from '../pages/EventFormPage.vue'
 import { useAuth } from '../auth'
 import { UserRole } from '../types/enums'
 
@@ -17,6 +19,9 @@ export const ROUTE_NAMES = {
     PASSWORD_RESET: 'password-reset',
     INVITATION_ACCEPT: 'invitation-accept',
     INVITE_USER: 'invite-user',
+    EVENTS: 'events',
+    EVENT_CREATE: 'event-create',
+    EVENT_EDIT: 'event-edit',
     TWO_FACTOR_SETTINGS: 'two-factor-settings',
     TWO_FACTOR_CHALLENGE: 'two-factor-challenge',
     NOT_FOUND: 'not-found',
@@ -77,6 +82,37 @@ export const appRoutes: RouteRecordRaw[] = [
         },
     },
     {
+        path: '/events',
+        name: ROUTE_NAMES.EVENTS,
+        component: EventsPage,
+        meta: {
+            layout: 'app',
+            requiresAuth: true,
+            showInSidebar: true,
+            navLabelKey: 'navigation.events',
+            navOrder: 2,
+            iconClass: 'bi bi-calendar-event',
+        },
+    },
+    {
+        path: '/events/new',
+        name: ROUTE_NAMES.EVENT_CREATE,
+        component: EventFormPage,
+        meta: {
+            layout: 'app',
+            requiresAuth: true,
+        },
+    },
+    {
+        path: '/events/:id/edit',
+        name: ROUTE_NAMES.EVENT_EDIT,
+        component: EventFormPage,
+        meta: {
+            layout: 'app',
+            requiresAuth: true,
+        },
+    },
+    {
         path: '/admin/invite-user',
         name: ROUTE_NAMES.INVITE_USER,
         component: InviteUserPage,
@@ -86,7 +122,7 @@ export const appRoutes: RouteRecordRaw[] = [
             requiredRole: UserRole.ADMIN,
             showInSidebar: true,
             navLabelKey: 'navigation.inviteUser',
-            navOrder: 2,
+            navOrder: 3,
             iconClass: 'bi bi-person-plus',
         },
     },
@@ -99,7 +135,7 @@ export const appRoutes: RouteRecordRaw[] = [
             requiresAuth: true,
             showInSidebar: true,
             navLabelKey: 'navigation.twoFactorSettings',
-            navOrder: 3,
+            navOrder: 4,
             iconClass: 'bi bi-shield-lock',
         },
     },

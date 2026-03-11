@@ -1,8 +1,8 @@
 <template>
-    <div class="p-3 h-100">
+    <div class="h-100 sidebar-root" :class="{ 'is-collapsed': collapsed }">
         <h6
             v-if="!collapsed"
-            class="text-uppercase text-muted mb-3"
+            class="text-uppercase pt-3 text-muted mb-3 ms-3"
         >
             {{ t('navigation.title') }}
         </h6>
@@ -11,13 +11,13 @@
             <template v-for="item in navigationItems" :key="String(item.name)">
                 <span
                     v-if="isCurrentRoute(item)"
-                    class="list-group-item list-group-item-action active disabled d-flex align-items-center gap-2"
+                    class="list-group-item list-group-item-action active disabled d-flex align-items-center gap-2 nav-item"
                     aria-disabled="true"
                     :title="String(item.meta?.navLabel ?? '')"
                 >
                     <i v-if="item.meta?.iconClass" :class="String(item.meta.iconClass)"></i>
 
-                    <span v-if="!collapsed">
+                    <span class="nav-label">
                         {{ t(String(item.meta?.navLabelKey ?? '')) }}
                     </span>
                 </span>
@@ -25,12 +25,12 @@
                 <router-link
                     v-else
                     :to="{ name: String(item.name) }"
-                    class="list-group-item list-group-item-action d-flex align-items-center gap-2"
+                    class="list-group-item list-group-item-action d-flex align-items-center gap-2 nav-item"
                     :title="String(item.meta?.navLabel ?? '')"
                 >
                     <i v-if="item.meta?.iconClass" :class="String(item.meta.iconClass)"></i>
 
-                    <span v-if="!collapsed">
+                    <span class="nav-label">
                         {{ t(String(item.meta?.navLabelKey ?? '')) }}
                     </span>
                 </router-link>
@@ -77,3 +77,36 @@ function isCurrentRoute(item: RouteRecordRaw): boolean {
     return route.name === item.name
 }
 </script>
+
+<style scoped>
+.nav-item {
+    overflow: visible;
+    position: relative;
+}
+
+.sidebar-root.is-collapsed .nav-item {
+    justify-content: center;
+}
+
+.sidebar-root.is-collapsed .nav-label {
+    position: absolute;
+    left: calc(100%);
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    padding: 0.5rem 0.7rem;
+    background: var(--bs-list-group-bg);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 50;
+}
+
+.sidebar-root.is-collapsed .nav-item:hover .nav-label,
+.sidebar-root.is-collapsed .nav-item:focus-within .nav-label {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(2px);
+}
+</style>

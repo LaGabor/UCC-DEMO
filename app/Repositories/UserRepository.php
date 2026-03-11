@@ -67,4 +67,13 @@ class UserRepository implements UserRepositoryInterface
                 'password' => Hash::make($password),
             ]);
     }
+
+    public function updatePreferredLocaleByUserId(int $userId, Language $preferredLocale): int
+    {
+        return User::query()
+            ->where('id', $userId)
+            ->update([
+                'preferred_locale' => $preferredLocale,
+            ]);
+    }
 }

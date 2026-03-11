@@ -1,5 +1,6 @@
 import { apiClient } from './client'
 import type { AuthUser } from '../types/auth'
+import { Language } from '../types/enums'
 
 export async function fetchCurrentUser(): Promise<AuthUser> {
     const response = await apiClient.get<AuthUser>('/api/user')
@@ -27,4 +28,10 @@ export async function twoFactorChallengeRequest(payload: {
     recovery_code?: string
 }): Promise<void> {
     await apiClient.post('/two-factor-challenge', payload)
+}
+
+export async function updatePreferredLocaleRequest(language: Language): Promise<void> {
+    await apiClient.put('/api/user/preferred-locale', {
+        preferred_locale: language,
+    })
 }

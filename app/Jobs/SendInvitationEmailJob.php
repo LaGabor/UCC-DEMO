@@ -7,6 +7,7 @@ use App\Mail\UserInvitationMail;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class SendInvitationEmailJob implements ShouldQueue
@@ -38,19 +39,35 @@ class SendInvitationEmailJob implements ShouldQueue
         $record = $userInvitationRepository->findInvitationTokenByToken($this->token);
 
         if (! $record || ! $record->created_at) {
+            Log::warning('job.invitation_email.skipped_missing_or_invalid_token', [
+                'job' => self::class,
+                'queue' => 'mail',
+            ]);
             return;
         }
 
         $createdAt = CarbonImmutable::parse($record->created_at);
 
         if ($createdAt->lt(now()->subDays(self::VALID_FOR_DAYS))) {
+            Log::warning('job.invitation_email.skipped_expired_token', [
+                'job' => self::class,
+                'queue' => 'mail',
+            ]);
             return;
         }
 
         if ($record->email !== $this->email) {
+            Log::warning('job.invitation_email.skipped_email_mismatch', [
+                'job' => self::class,
+                'queue' => 'mail',
+            ]);
             return;
         }
 
         Mail::to($this->email)->send(new UserInvitationMail($this->token));
+        Log::info('job.invitation_email.sent', [
+            'job' => self::class,
+            'queue' => 'mail',
+        ]);
     }
 }
