@@ -17,12 +17,13 @@
                 <AppSidebar :collapsed="effectiveSidebarCollapsed" />
             </aside>
 
-            <main class="app-content flex-grow-1 p-4">
+            <main class="app-content flex-grow-1">
                 <slot />
             </main>
         </div>
 
         <AppFooter />
+        <UserChatWidget v-if="showUserChatWidget" />
     </div>
 </template>
 
@@ -31,12 +32,16 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppNavbar from '../components/AppNavbar.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppFooter from '../components/AppFooter.vue'
+import UserChatWidget from '../components/UserChatWidget.vue'
+import { useAuth } from '../auth'
+import { UserRole } from '../types/enums'
 
 const MOBILE_BREAKPOINT_PX = 600
 const SIDEBAR_PREF_KEY = 'sidebar_collapsed_preference'
 
 const isUnderMobileBreakpoint = ref(false)
 const userSidebarCollapsedPreference = ref(false)
+const auth = useAuth()
 
 const effectiveSidebarCollapsed = computed(() =>
     isUnderMobileBreakpoint.value ? true : userSidebarCollapsedPreference.value
@@ -44,6 +49,7 @@ const effectiveSidebarCollapsed = computed(() =>
 const isSidebarHidden = computed(
     () => isUnderMobileBreakpoint.value && userSidebarCollapsedPreference.value
 )
+const showUserChatWidget = computed(() => auth.state.user?.role === UserRole.USER)
 
 function loadUserSidebarPreference(): boolean {
     return window.localStorage.getItem(SIDEBAR_PREF_KEY) === '1'

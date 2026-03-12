@@ -9,6 +9,7 @@ import AcceptInvitationPage from '../pages/AcceptInvitationPage.vue'
 import InviteUserPage from '../pages/InviteUserPage.vue'
 import EventsPage from '../pages/EventsPage.vue'
 import EventFormPage from '../pages/EventFormPage.vue'
+import AgentMonitorPage from '../pages/AgentMonitorPage.vue'
 import { useAuth } from '../auth'
 import { UserRole } from '../types/enums'
 
@@ -22,6 +23,7 @@ export const ROUTE_NAMES = {
     EVENTS: 'events',
     EVENT_CREATE: 'event-create',
     EVENT_EDIT: 'event-edit',
+    AGENT_MONITOR: 'agent-monitor',
     TWO_FACTOR_SETTINGS: 'two-factor-settings',
     TWO_FACTOR_CHALLENGE: 'two-factor-challenge',
     NOT_FOUND: 'not-found',
@@ -113,6 +115,20 @@ export const appRoutes: RouteRecordRaw[] = [
         },
     },
     {
+        path: '/agent-monitor',
+        name: ROUTE_NAMES.AGENT_MONITOR,
+        component: AgentMonitorPage,
+        meta: {
+            layout: 'app',
+            requiresAuth: true,
+            requiredRoles: [UserRole.ADMIN, UserRole.HELPDESK_AGENT],
+            showInSidebar: true,
+            navLabelKey: 'navigation.agentMonitor',
+            navOrder: 4,
+            iconClass: 'bi bi-headset',
+        },
+    },
+    {
         path: '/admin/invite-user',
         name: ROUTE_NAMES.INVITE_USER,
         component: InviteUserPage,
@@ -122,7 +138,7 @@ export const appRoutes: RouteRecordRaw[] = [
             requiredRole: UserRole.ADMIN,
             showInSidebar: true,
             navLabelKey: 'navigation.inviteUser',
-            navOrder: 3,
+            navOrder: 5,
             iconClass: 'bi bi-person-plus',
         },
     },
@@ -135,7 +151,7 @@ export const appRoutes: RouteRecordRaw[] = [
             requiresAuth: true,
             showInSidebar: true,
             navLabelKey: 'navigation.twoFactorSettings',
-            navOrder: 4,
+            navOrder: 6,
             iconClass: 'bi bi-shield-lock',
         },
     },
@@ -167,6 +183,7 @@ router.beforeEach(async (to) => {
     const requiresAuth = Boolean(to.meta.requiresAuth)
     const guestOnly = Boolean(to.meta.guestOnly)
     const requiredRole = to.meta.requiredRole as UserRole | undefined
+    const requiredRoles = to.meta.requiredRoles as UserRole[] | undefined
 
     if (requiresAuth && !isLoggedIn) {
         return { name: ROUTE_NAMES.LOGIN }
@@ -177,6 +194,10 @@ router.beforeEach(async (to) => {
     }
 
     if (requiresAuth && requiredRole && auth.state.user?.role !== requiredRole) {
+        return { name: ROUTE_NAMES.HOME }
+    }
+
+    if (requiresAuth && requiredRoles && !requiredRoles.includes(auth.state.user?.role as UserRole)) {
         return { name: ROUTE_NAMES.HOME }
     }
 

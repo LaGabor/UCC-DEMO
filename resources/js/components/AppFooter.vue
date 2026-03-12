@@ -1,13 +1,13 @@
 <template>
     <footer class="bg-white border-top py-3">
-        <div class="container-fluid d-flex flex-column flex-md-row justify-content-between align-items-center gap-2">
+        <div class="container-fluid d-flex flex-column flex-md-row align-items-center gap-2">
             <div class="text-muted small">
                 © {{ currentYear }} {{ t('app.projectName') }}
+                <span class="text-muted ms-3 me-3">Lauter Gábor</span>
             </div>
 
-            <div class="d-flex align-items-center gap-3">
                 <a
-                    href="https://github.com/your-project-url"
+                    href="https://github.com/LaGabor?tab=repositories"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="text-decoration-none text-dark"
@@ -17,7 +17,7 @@
                 </a>
 
                 <a
-                    href="https://www.linkedin.com/in/your-linkedin-profile"
+                    href="https://www.linkedin.com/in/g%C3%A1bor-lauter/"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="text-decoration-none text-primary"
@@ -25,7 +25,6 @@
                 >
                     <i class="bi bi-linkedin fs-5"></i>
                 </a>
-            </div>
         </div>
     </footer>
 </template>

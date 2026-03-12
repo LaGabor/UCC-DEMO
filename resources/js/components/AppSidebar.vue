@@ -63,12 +63,17 @@ const navigationItems = computed(() => {
             }
 
             const requiredRole = item.meta?.requiredRole as string | undefined
+            const requiredRoles = item.meta?.requiredRoles as string[] | undefined
 
-            if (!requiredRole) {
-                return true
+            if (requiredRoles && requiredRoles.length > 0) {
+                return Boolean(auth.state.user?.role && requiredRoles.includes(auth.state.user.role))
             }
 
-            return auth.state.user?.role === requiredRole
+            if (requiredRole) {
+                return auth.state.user?.role === requiredRole
+            }
+
+            return true
         })
         .sort((a, b) => Number(a.meta?.navOrder ?? 999) - Number(b.meta?.navOrder ?? 999))
 })

@@ -65,9 +65,5 @@ class SendInvitationEmailJob implements ShouldQueue
         }
 
         Mail::to($this->email)->send(new UserInvitationMail($this->token));
-        Log::info('job.invitation_email.sent', [
-            'job' => self::class,
-            'queue' => 'mail',
-        ]);
     }
 }

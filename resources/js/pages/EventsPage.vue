@@ -1,5 +1,5 @@
 <template>
-    <div class="container py-3">
+    <div class="container py-5">
         <div class="mb-4">
             <h2 class="mb-1">{{ t('events.title') }}</h2>
             <p class="mb-0 text-muted">{{ t('events.subtitle') }}</p>
@@ -449,5 +449,6 @@ onBeforeUnmount(() => {
 .action-btn:hover {
     transform: translateY(-1px);
 }
+
 </style>
 
