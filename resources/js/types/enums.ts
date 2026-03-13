@@ -39,4 +39,5 @@ export enum ConversationMessageType {
     BOT_ANSWER = 'bot_answer',
     AGENT_ANSWER = 'agent_answer',
     SYSTEM_NOTICE = 'system_notice',
+    SYSTEM_ERROR = 'system_error',
 }

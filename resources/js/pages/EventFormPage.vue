@@ -1,5 +1,5 @@
 <template>
-    <div class="container py-3">
+    <div class="m-3 py-3">
         <div class="mb-4">
             <h2 class="mb-1">{{ isEditMode ? t('events.editTitle') : t('events.createTitle') }}</h2>
             <p class="mb-0 text-muted">{{ isEditMode ? t('events.editSubtitle') : t('events.createSubtitle') }}</p>

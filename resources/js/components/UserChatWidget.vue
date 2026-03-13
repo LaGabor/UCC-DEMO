@@ -33,6 +33,7 @@
                     <button
                         type="button"
                         class="btn btn-sm btn-light"
+                        :disabled="waitingForBotResponse || actionLoading"
                         @click="toggleConnectionTarget"
                     >
                         {{
@@ -62,24 +63,39 @@
                 >
                     <div class="message-bubble" :class="messageBubbleClass(message)">
                         <div class="message-meta">
-                            <span class="message-sender">{{ senderLabel(message.sender) }}</span>
+                            <span class="message-sender">{{ senderLabel(message.sender_type) }}</span>
                             <span class="message-dot">-</span>
                             <span>{{ formatDateTime(message.created_at) }}</span>
                         </div>
-                        <p class="mb-0">{{ message.content }}</p>
+                        <p class="mb-0">{{ message.message_text ?? '' }}</p>
                     </div>
                 </div>
             </div>
 
             <form class="chat-panel__form" @submit.prevent="submitMessage">
-                <input
-                    v-model="draftMessage"
-                    type="text"
-                    class="form-control"
-                    :placeholder="t('chat.inputPlaceholder')"
-                    autocomplete="off"
-                />
-                <button type="submit" class="btn btn-primary" :disabled="!canSubmit">
+                <div class="position-relative">
+                    <input
+                        v-model="draftMessage"
+                        type="text"
+                        class="form-control pe-5"
+                        :placeholder="t('chat.inputPlaceholder')"
+                        :disabled="waitingForBotResponse || isWaitingForAgent"
+                        autocomplete="off"
+                        @input="onInputActivity"
+                        @focus="onInputFocus"
+                    />
+                    <span
+                        v-if="waitingForBotResponse"
+                        class="position-absolute top-50 end-0 translate-middle-y me-3 text-primary chat-loading-spinner"
+                        role="status"
+                        aria-hidden="true"
+                    />
+                </div>
+                <button
+                    type="submit"
+                    class="btn btn-primary"
+                    :disabled="!canSubmit || waitingForBotResponse || isWaitingForAgent"
+                >
                     <i class="bi bi-send-fill" />
                 </button>
             </form>
@@ -90,19 +106,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ConversationMessageSenderType, ConversationMessageType } from '../types/enums'
+import {
+    callAgentRequest,
+    cancelCallRequest,
+    getUserConversationRequest,
+    sendUserMessageRequest,
+} from '../api/communication'
+import type { ConversationMessageBroadcastPayload, ConversationMessageItem } from '../types/communication'
+import { ConversationMessageSenderType, ConversationMessageType, ConversationStatus } from '../types/enums'
+import { getApiErrorMessage } from '../utils/apiErrorMessage'
 
 type ConnectionTarget = 'bot' | 'agent'
 
-type ChatMessage = {
-    id: string
-    sender: ConversationMessageSenderType
-    message_type: ConversationMessageType
-    content: string
-    created_at: string
-}
-
 const MOBILE_BREAKPOINT_PX = 900
+const SEND_THROTTLE_MS = 1000
+const INACTIVITY_DISCONNECT_MS = 150_000
+const BOT_RESPONSE_TIMEOUT_MS = 30_000
 
 const { t } = useI18n()
 
@@ -111,58 +130,17 @@ const isMobile = ref(false)
 const draftMessage = ref('')
 const connectionTarget = ref<ConnectionTarget>('bot')
 const messagesContainer = ref<HTMLElement | null>(null)
-
-const messageFeed = ref<ChatMessage[]>([
-    {
-        id: 'msg-1',
-        sender: ConversationMessageSenderType.SYSTEM,
-        message_type: ConversationMessageType.SYSTEM_NOTICE,
-        content: 'System: This conversation has started with bot support.',
-        created_at: '2026-03-10T08:00:00Z',
-    },
-    {
-        id: 'msg-2',
-        sender: ConversationMessageSenderType.USER,
-        message_type: ConversationMessageType.QUESTION,
-        content: 'Hi, I need help with my account.',
-        created_at: '2026-03-10T08:01:00Z',
-    },
-    {
-        id: 'msg-3',
-        sender: ConversationMessageSenderType.BOT,
-        message_type: ConversationMessageType.BOT_ANSWER,
-        content: 'Sure, I can help. Can you tell me what issue you are seeing?',
-        created_at: '2026-03-10T08:01:15Z',
-    },
-    {
-        id: 'msg-4',
-        sender: ConversationMessageSenderType.USER,
-        message_type: ConversationMessageType.QUESTION,
-        content: 'I cannot reset my password.',
-        created_at: '2026-03-10T08:02:05Z',
-    },
-    {
-        id: 'msg-5',
-        sender: ConversationMessageSenderType.AGENT,
-        message_type: ConversationMessageType.AGENT_ANSWER,
-        content: 'Agent here. I checked your request and resent the reset link.',
-        created_at: '2026-03-10T08:02:55Z',
-    },
-    {
-        id: 'msg-6',
-        sender: ConversationMessageSenderType.USER,
-        message_type: ConversationMessageType.QUESTION,
-        content: 'Thanks. Is there anything else I should do?',
-        created_at: '2026-03-10T08:03:25Z',
-    },
-    {
-        id: 'msg-7',
-        sender: ConversationMessageSenderType.BOT,
-        message_type: ConversationMessageType.BOT_ANSWER,
-        content: 'Please check spam folder as well. If needed, we can continue with a human agent.',
-        created_at: '2026-03-10T08:03:50Z',
-    },
-])
+const hasInitialOpenScroll = ref(false)
+const savedScrollTop = ref<number | null>(null)
+const messageFeed = ref<ConversationMessageItem[]>([])
+const conversationId = ref<number | null>(null)
+const conversationStatus = ref<ConversationStatus>(ConversationStatus.OPEN)
+const waitingForBotResponse = ref(false)
+const actionLoading = ref(false)
+const lastSentAtMs = ref(0)
+const subscribedConversationId = ref<number | null>(null)
+const loadingTimeoutHandle = ref<number | null>(null)
+const inactivityTimeoutHandle = ref<number | null>(null)
 
 const orderedMessages = computed(() =>
     [...messageFeed.value].sort(
@@ -170,7 +148,12 @@ const orderedMessages = computed(() =>
     )
 )
 
-const canSubmit = computed(() => draftMessage.value.trim().length > 0)
+const canSubmit = computed(
+    () => draftMessage.value.trim().length > 0 && !actionLoading.value
+)
+const isWaitingForAgent = computed(
+    () => conversationStatus.value === ConversationStatus.WAITING_HUMAN
+)
 
 function updateScreenState(): void {
     isMobile.value = window.innerWidth < MOBILE_BREAKPOINT_PX
@@ -181,30 +164,104 @@ function openChat(): void {
 }
 
 function closeChat(): void {
+    if (messagesContainer.value) {
+        savedScrollTop.value = messagesContainer.value.scrollTop
+    }
     isOpen.value = false
 }
 
-function toggleConnectionTarget(): void {
-    connectionTarget.value = connectionTarget.value === 'bot' ? 'agent' : 'bot'
-}
-
-function submitMessage(): void {
-    const content = draftMessage.value.trim()
-    if (!content) {
+async function toggleConnectionTarget(): Promise<void> {
+    if (actionLoading.value || waitingForBotResponse.value) {
         return
     }
 
-    const now = new Date()
-    const userMessage: ChatMessage = {
-        id: `msg-${now.getTime()}`,
-        sender: ConversationMessageSenderType.USER,
-        message_type: ConversationMessageType.QUESTION,
-        content,
-        created_at: now.toISOString(),
+    actionLoading.value = true
+    try {
+        if (connectionTarget.value === 'bot') {
+            const payload = await callAgentRequest({ conversation_id: conversationId.value })
+            hydrateConversation(payload)
+            stopInactivityDisconnectTimer()
+        } else {
+            const payload = await cancelCallRequest({ conversation_id: conversationId.value })
+            hydrateConversation(payload)
+            resetInactivityDisconnectTimer()
+        }
+    } catch (error) {
+        pushSystemMessage(getApiErrorMessage(t, error, 'errors.unexpected'))
+    } finally {
+        actionLoading.value = false
+    }
+}
+
+async function submitMessage(): Promise<void> {
+    const content = draftMessage.value.trim()
+    if (!content || waitingForBotResponse.value || actionLoading.value) {
+        return
     }
 
-    messageFeed.value.push(userMessage)
-    draftMessage.value = ''
+    const nowMs = Date.now()
+    if (nowMs - lastSentAtMs.value < SEND_THROTTLE_MS) {
+        return
+    }
+
+    actionLoading.value = true
+    lastSentAtMs.value = nowMs
+    resetInactivityDisconnectTimer()
+    const localMessageText = content
+
+    try {
+        const ack = await sendUserMessageRequest({
+            conversation_id: conversationId.value,
+            conversation_status: conversationStatus.value,
+            message_text: content,
+        })
+        draftMessage.value = ''
+        const previousConversationId = conversationId.value
+        conversationId.value = ack.conversation_id
+        conversationStatus.value = ack.status
+        connectionTarget.value =
+            conversationStatus.value === ConversationStatus.WAITING_HUMAN ||
+            conversationStatus.value === ConversationStatus.ASSIGNED
+                ? 'agent'
+                : 'bot'
+
+        if (
+            previousConversationId === null ||
+            subscribedConversationId.value !== ack.conversation_id
+        ) {
+            appendLocalUserMessage(localMessageText)
+        }
+
+        if (conversationStatus.value === ConversationStatus.OPEN) {
+            const lastMessage = messageFeed.value[messageFeed.value.length - 1]
+            const lastIsBotReply =
+                lastMessage &&
+                (lastMessage.sender_type === ConversationMessageSenderType.BOT ||
+                    lastMessage.sender_type === ConversationMessageSenderType.AGENT ||
+                    lastMessage.sender_type === ConversationMessageSenderType.SYSTEM)
+            if (!lastIsBotReply) {
+                waitingForBotResponse.value = true
+                startBotResponseTimeout()
+            }
+            stopInactivityDisconnectTimer()
+        }
+    } catch (error) {
+        pushSystemMessage(getApiErrorMessage(t, error, 'errors.unexpected'))
+    } finally {
+        actionLoading.value = false
+    }
+}
+
+function appendLocalUserMessage(messageText: string): void {
+    const fallbackId = Math.floor(Math.random() * 1_000_000_000)
+    messageFeed.value.push({
+        id: fallbackId,
+        sender_type: ConversationMessageSenderType.USER,
+        message_type: ConversationMessageType.QUESTION,
+        message_text: messageText,
+        sender_user_id: null,
+        created_at: new Date().toISOString(),
+    })
 }
 
 function senderLabel(sender: ConversationMessageSenderType): string {
@@ -232,8 +289,11 @@ function formatDateTime(value: string): string {
     return `${year}. ${month}. ${day} ${hour}:${minute}`
 }
 
-function messageRowClass(message: ChatMessage): string {
-    if (message.message_type === ConversationMessageType.SYSTEM_NOTICE) {
+function messageRowClass(message: ConversationMessageItem): string {
+    if (
+        message.message_type === ConversationMessageType.SYSTEM_NOTICE ||
+        message.message_type === ConversationMessageType.SYSTEM_ERROR
+    ) {
         return 'message-row--center'
     }
 
@@ -244,7 +304,7 @@ function messageRowClass(message: ChatMessage): string {
     return 'message-row--left'
 }
 
-function messageBubbleClass(message: ChatMessage): string {
+function messageBubbleClass(message: ConversationMessageItem): string {
     switch (message.message_type) {
         case ConversationMessageType.QUESTION:
             return 'message-bubble--question'
@@ -253,9 +313,154 @@ function messageBubbleClass(message: ChatMessage): string {
         case ConversationMessageType.AGENT_ANSWER:
             return 'message-bubble--agent'
         case ConversationMessageType.SYSTEM_NOTICE:
+        case ConversationMessageType.SYSTEM_ERROR:
             return 'message-bubble--system'
         default:
             return 'message-bubble--bot'
+    }
+}
+
+function onInputActivity(): void {
+    if (conversationStatus.value === ConversationStatus.OPEN && !waitingForBotResponse.value) {
+        resetInactivityDisconnectTimer()
+    }
+}
+
+function onInputFocus(): void {
+    void connectToConversationChannel()
+    if (conversationStatus.value === ConversationStatus.OPEN && !waitingForBotResponse.value) {
+        resetInactivityDisconnectTimer()
+    }
+}
+
+function hydrateConversation(payload: {
+    conversation_id: number | null
+    status: ConversationStatus | null
+    messages: ConversationMessageItem[]
+}): void {
+    conversationId.value = payload.conversation_id
+    conversationStatus.value = payload.status ?? ConversationStatus.OPEN
+    messageFeed.value = payload.messages
+    connectionTarget.value =
+        conversationStatus.value === ConversationStatus.WAITING_HUMAN ||
+        conversationStatus.value === ConversationStatus.ASSIGNED
+            ? 'agent'
+            : 'bot'
+
+    if (conversationStatus.value !== ConversationStatus.OPEN) {
+        waitingForBotResponse.value = false
+        clearBotResponseTimeout()
+    }
+}
+
+function pushSystemMessage(messageText: string): void {
+    const fallbackId = Math.floor(Math.random() * 1_000_000_000)
+    messageFeed.value.push({
+        id: fallbackId,
+        sender_type: ConversationMessageSenderType.SYSTEM,
+        message_type: ConversationMessageType.SYSTEM_NOTICE,
+        message_text: messageText,
+        sender_user_id: null,
+        created_at: new Date().toISOString(),
+    })
+}
+
+async function loadConversation(): Promise<void> {
+    try {
+        const payload = await getUserConversationRequest()
+        hydrateConversation(payload)
+    } catch {
+        messageFeed.value = []
+    }
+}
+
+async function connectToConversationChannel(): Promise<void> {
+    if (!conversationId.value || subscribedConversationId.value === conversationId.value) {
+        return
+    }
+
+    disconnectConversationChannel()
+
+    const channelName = `conversation.${conversationId.value}`
+    window.Echo.private(channelName).listen(
+        '.conversation.message.created',
+        (payload: ConversationMessageBroadcastPayload) => {
+            if (payload.conversation_id !== conversationId.value) {
+                return
+            }
+
+            conversationStatus.value = payload.status
+            connectionTarget.value =
+                payload.status === ConversationStatus.WAITING_HUMAN ||
+                payload.status === ConversationStatus.ASSIGNED
+                    ? 'agent'
+                    : 'bot'
+
+            if (!messageFeed.value.some((message) => message.id === payload.message.id)) {
+                messageFeed.value.push(payload.message)
+            }
+
+            if (
+                payload.message.sender_type === ConversationMessageSenderType.BOT ||
+                payload.message.sender_type === ConversationMessageSenderType.AGENT ||
+                payload.message.sender_type === ConversationMessageSenderType.SYSTEM
+            ) {
+                waitingForBotResponse.value = false
+                clearBotResponseTimeout()
+            }
+
+            resetInactivityDisconnectTimer()
+        }
+    )
+
+    subscribedConversationId.value = conversationId.value
+}
+
+function disconnectConversationChannel(): void {
+    if (!subscribedConversationId.value) {
+        return
+    }
+
+    window.Echo.leave(`conversation.${subscribedConversationId.value}`)
+    subscribedConversationId.value = null
+}
+
+function resetInactivityDisconnectTimer(): void {
+    stopInactivityDisconnectTimer()
+
+    if (conversationStatus.value !== ConversationStatus.OPEN || waitingForBotResponse.value) {
+        return
+    }
+
+    inactivityTimeoutHandle.value = window.setTimeout(() => {
+        disconnectConversationChannel()
+    }, INACTIVITY_DISCONNECT_MS)
+}
+
+function stopInactivityDisconnectTimer(): void {
+    if (inactivityTimeoutHandle.value !== null) {
+        window.clearTimeout(inactivityTimeoutHandle.value)
+        inactivityTimeoutHandle.value = null
+    }
+}
+
+function startBotResponseTimeout(): void {
+    clearBotResponseTimeout()
+    loadingTimeoutHandle.value = window.setTimeout(() => {
+        if (!waitingForBotResponse.value) {
+            return
+        }
+
+        waitingForBotResponse.value = false
+        pushSystemMessage(t('chat.timeoutMessage'))
+        resetInactivityDisconnectTimer()
+    }, BOT_RESPONSE_TIMEOUT_MS)
+}
+
+function clearBotResponseTimeout(): void {
+    if (loadingTimeoutHandle.value !== null) {
+        window.clearTimeout(loadingTimeoutHandle.value)
+        loadingTimeoutHandle.value = null
     }
 }
 
@@ -272,21 +477,36 @@ watch(
 )
 
 watch(isOpen, async (open) => {
-    if (!open || !messagesContainer.value) {
+    if (!open) {
         return
     }
 
     await nextTick()
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+    if (!messagesContainer.value) {
+        return
+    }
+
+    if (!hasInitialOpenScroll.value) {
+        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+        hasInitialOpenScroll.value = true
+        return
+    }
+
+    if (savedScrollTop.value !== null) {
+        messagesContainer.value.scrollTop = savedScrollTop.value
+    }
 })
 
 onMounted(() => {
-    connectionTarget.value = 'bot'
     updateScreenState()
     window.addEventListener('resize', updateScreenState)
+    void loadConversation()
 })
 
 onBeforeUnmount(() => {
+    stopInactivityDisconnectTimer()
+    clearBotResponseTimeout()
+    disconnectConversationChannel()
     window.removeEventListener('resize', updateScreenState)
 })
 </script>
@@ -366,6 +586,9 @@ onBeforeUnmount(() => {
     overflow-y: auto;
     flex: 1 1 auto;
     padding: 0.95rem;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 .message-row {
@@ -435,5 +658,27 @@ onBeforeUnmount(() => {
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 0.55rem;
+}
+
+.chat-loading-spinner {
+    display: inline-flex;
+    width: 0.9rem;
+    height: 0.9rem;
+}
+
+.chat-loading-spinner::before {
+    content: '';
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: chat-spin 0.8s linear infinite;
+}
+
+@keyframes chat-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 </style>

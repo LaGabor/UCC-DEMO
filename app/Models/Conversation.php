@@ -15,11 +15,19 @@ class Conversation extends Model
         'status',
         'channel',
         'last_message_at',
+        'last_assigned_call',
+        'last_assigned_at',
+        'last_closed_at',
+        'last_open_at',
         'closed_at',
     ];
 
     protected $casts = [
         'last_message_at' => 'datetime',
+        'last_assigned_call' => 'datetime',
+        'last_assigned_at' => 'datetime',
+        'last_closed_at' => 'datetime',
+        'last_open_at' => 'datetime',
         'closed_at' => 'datetime',
         'status' => ConversationStatus::class,
     ];

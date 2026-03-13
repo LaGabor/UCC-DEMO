@@ -1,5 +1,5 @@
 <template>
-    <div class="container py-5">
+    <div class="m-3 py-3">
         <div class="mb-4">
             <h2 class="mb-1">{{ t('events.title') }}</h2>
             <p class="mb-0 text-muted">{{ t('events.subtitle') }}</p>
@@ -15,7 +15,7 @@
         </div>
 
         <div class="card shadow-sm mb-3">
-            <div class="card-body">
+            <div class="card-body event-list-card-body">
                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
                     <h5 class="mb-0">{{ t('events.listTitle') }}</h5>
                     <router-link
@@ -27,7 +27,7 @@
                     </router-link>
                 </div>
 
-                <form class="row g-3 mb-3" @submit.prevent="applyFilters">
+                <form class="row g-3 mb-3 event-filters-form" @submit.prevent="applyFilters">
                     <div class="col-12 col-md-4">
                         <label for="search" class="form-label">{{ t('events.searchLabel') }}</label>
                         <input
@@ -434,6 +434,18 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.event-list-card-body {
+    container-type: inline-size;
+    container-name: event-filters;
+}
+
+@container event-filters (max-width: 880px) {
+    .event-filters-form > * {
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+    }
+}
+
 .table-sort-btn {
     border: 0;
     background: transparent;
@@ -449,6 +461,5 @@ onBeforeUnmount(() => {
 .action-btn:hover {
     transform: translateY(-1px);
 }
-
 </style>
 

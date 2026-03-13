@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureUserIsAdmin;
+use App\Http\Middleware\EnsureUserIsAdminOrHelpdeskAgent;
 use App\Http\Middleware\AttachApiRequestContext;
 use App\Support\ApiResponse;
 use App\Exceptions\ApiDomainException;
@@ -28,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToGroup('api', AttachApiRequestContext::class);
         $middleware->alias([
             'admin' => EnsureUserIsAdmin::class,
+            'agent_monitor' => EnsureUserIsAdminOrHelpdeskAgent::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

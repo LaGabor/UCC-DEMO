@@ -1,12 +1,15 @@
 <?php
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Fortify\Actions\DisableTwoFactorAuthentication;
 use Laravel\Fortify\Actions\EnableTwoFactorAuthentication;
 use Laravel\Fortify\Actions\GenerateNewRecoveryCodes;
 use PragmaRX\Google2FAQRCode\Google2FA;
+
+Broadcast::routes(['middleware' => ['web', 'auth']]);
 
 Route::get('/auth/check', function (Request $request) {
     return response()->json([

@@ -10,6 +10,7 @@ import InviteUserPage from '../pages/InviteUserPage.vue'
 import EventsPage from '../pages/EventsPage.vue'
 import EventFormPage from '../pages/EventFormPage.vue'
 import AgentMonitorPage from '../pages/AgentMonitorPage.vue'
+import ConversationHistoryPage from '../pages/ConversationHistoryPage.vue'
 import { useAuth } from '../auth'
 import { UserRole } from '../types/enums'
 
@@ -24,6 +25,7 @@ export const ROUTE_NAMES = {
     EVENT_CREATE: 'event-create',
     EVENT_EDIT: 'event-edit',
     AGENT_MONITOR: 'agent-monitor',
+    CONVERSATION_HISTORY: 'conversation-history',
     TWO_FACTOR_SETTINGS: 'two-factor-settings',
     TWO_FACTOR_CHALLENGE: 'two-factor-challenge',
     NOT_FOUND: 'not-found',
@@ -143,6 +145,20 @@ export const appRoutes: RouteRecordRaw[] = [
         },
     },
     {
+        path: '/conversations/history',
+        name: ROUTE_NAMES.CONVERSATION_HISTORY,
+        component: ConversationHistoryPage,
+        meta: {
+            layout: 'app',
+            requiresAuth: true,
+            requiredRoles: [UserRole.ADMIN, UserRole.HELPDESK_AGENT],
+            showInSidebar: true,
+            navLabelKey: 'navigation.conversationHistory',
+            navOrder: 6,
+            iconClass: 'bi bi-journals',
+        },
+    },
+    {
         path: '/settings/two-factor',
         name: ROUTE_NAMES.TWO_FACTOR_SETTINGS,
         component: TwoFactorSettingsPage,
@@ -151,7 +167,7 @@ export const appRoutes: RouteRecordRaw[] = [
             requiresAuth: true,
             showInSidebar: true,
             navLabelKey: 'navigation.twoFactorSettings',
-            navOrder: 6,
+            navOrder: 7,
             iconClass: 'bi bi-shield-lock',
         },
     },

@@ -18,9 +18,12 @@ return new class extends Migration
                 ->constrained('users')
                 ->nullOnDelete();
             $table->string('status', 32)->default('open');
-            $table->string('channel', 32)->default('web');
             $table->timestamp('last_message_at')->nullable();
             $table->timestamp('closed_at')->nullable();
+            $table->timestamp('last_assigned_call')->nullable();
+            $table->timestamp('last_assigned_at')->nullable();
+            $table->timestamp('last_closed_at')->nullable();
+            $table->timestamp('last_open_at')->nullable();
             $table->timestamps();
             $table->index(['status', 'last_message_at']);
             $table->index(['user_id', 'status']);

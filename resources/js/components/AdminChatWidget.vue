@@ -6,9 +6,21 @@
                 <small class="text-white-50">{{ subtitle }}</small>
             </div>
 
-            <button type="button" class="btn btn-sm btn-outline-light ms-auto" @click="$emit('close')">
-                <i class="bi bi-x-lg" />
-            </button>
+            <div class="ms-auto d-flex align-items-center gap-2">
+                <button
+                    v-if="actionLabel"
+                    type="button"
+                    class="btn btn-sm"
+                    :class="actionButtonClass ?? 'btn-warning'"
+                    :disabled="actionDisabled"
+                    @click="$emit('action')"
+                >
+                    {{ actionLabel }}
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-light" @click="$emit('close')">
+                    <i class="bi bi-x-lg" />
+                </button>
+            </div>
         </header>
 
         <div ref="messagesContainer" class="admin-chat__messages">
@@ -63,11 +75,15 @@ const props = defineProps<{
     inputPlaceholder: string
     messages: AdminChatMessage[]
     inputDisabled?: boolean
+    actionLabel?: string
+    actionButtonClass?: string
+    actionDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
     close: []
     send: [content: string]
+    action: []
 }>()
 
 const messagesContainer = ref<HTMLElement | null>(null)

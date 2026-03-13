@@ -19,7 +19,7 @@ return new class extends Migration
                 ->constrained('users')
                 ->nullOnDelete();
             $table->string('message_type', 32);
-            $table->string('language', 5)->default('hu');
+            $table->string('language', 5)->nullable();;
             $table->text('message_text')->nullable();
             $table->string('answer_code')->nullable();
             $table->timestamps();
