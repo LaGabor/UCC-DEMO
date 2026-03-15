@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Data\Communication\ConversationMessageData;
+use App\Enums\ConversationBroadcastType;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use Illuminate\Broadcasting\InteractsWithSockets;
@@ -37,8 +38,8 @@ class ConversationMessageBroadcasted implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
-
         return [
+            'type' => ConversationBroadcastType::MESSAGE->value,
             'conversation_id' => $this->conversation->id,
             'status' => $this->conversation->status->value,
             'message' => ConversationMessageData::fromModel($this->message)->toArray(),

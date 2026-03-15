@@ -1,15 +1,17 @@
 <?php
 
+use App\Http\Middleware\AttachApiRequestContext;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\EnsureUserIsAdminOrHelpdeskAgent;
-use App\Http\Middleware\AttachApiRequestContext;
 use App\Support\ApiResponse;
 use App\Exceptions\ApiDomainException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -27,10 +29,12 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
         $middleware->appendToGroup('api', AttachApiRequestContext::class);
+        $middleware->appendToGroup('api', 'throttle:per-second');
         $middleware->alias([
             'admin' => EnsureUserIsAdmin::class,
             'agent_monitor' => EnsureUserIsAdminOrHelpdeskAgent::class,
         ]);
+        $middleware->appendToGroup('web', 'throttle:per-second');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (ApiDomainException $e, Request $request) {
@@ -95,6 +99,26 @@ return Application::configure(basePath: dirname(__DIR__))
                 'The requested resource was not found.',
                 null,
                 Response::HTTP_NOT_FOUND
+            );
+        });
+
+        $exceptions->render(function (ThrottleRequestsException $e, Request $request) {
+            Log::warning('security.rate_limit_exceeded', [
+                'path' => $request->path(),
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'message' => $e->getMessage(),
+            ]);
+
+            if (! $request->expectsJson()) {
+                return null;
+            }
+
+            return ApiResponse::error(
+                'TOO_MANY_REQUESTS',
+                'Too many attempts. Please try again later.',
+                null,
+                Response::HTTP_TOO_MANY_REQUESTS
             );
         });
 

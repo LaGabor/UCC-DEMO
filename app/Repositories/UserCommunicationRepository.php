@@ -3,19 +3,14 @@
 namespace App\Repositories;
 
 use App\Contracts\Repositories\UserCommunicationRepositoryInterface;
-use App\Enums\ApiDomainErrorCode;
-use App\Enums\ApiDomainStatus;
 use App\Enums\ConversationMessageSenderType;
 use App\Enums\ConversationMessageType;
 use App\Enums\ConversationStatus;
-use App\Exceptions\ApiDomainException;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
-use Throwable;
 
 class UserCommunicationRepository implements UserCommunicationRepositoryInterface
 {
@@ -49,44 +44,33 @@ class UserCommunicationRepository implements UserCommunicationRepositoryInterfac
         return Conversation::query()->find($conversationId);
     }
 
+    public function findConversationsAssignedToAgent(int $agentId): Collection
+    {
+        return Conversation::query()
+            ->where('assigned_agent_id', $agentId)
+            ->get();
+    }
+
     public function createConversation(int $userId, ConversationStatus $status): Conversation
     {
-        try {
-            return Conversation::query()->create([
-                'user_id' => $userId,
-                'status' => $status,
-                'last_message_at' => now(),
-                'closed_at' => $status === ConversationStatus::CLOSED ? now() : null,
-            ]);
-        } catch (Throwable $exception) {
-            Log::error('conversation.create_failed', [
-                'user_id' => $userId,
-                'status' => $status->value,
-                'error' => $exception->getMessage(),
-            ]);
-
-            throw new ApiDomainException(
-                ApiDomainErrorCode::INTERNAL_SERVER_ERROR,
-                'Failed to create conversation.',
-                null,
-                ApiDomainStatus::INTERNAL_SERVER_ERROR
-            );
-        }
+        return Conversation::query()->create([
+            'user_id' => $userId,
+            'status' => $status,
+            'last_message_at' => now(),
+        ]);
     }
 
     public function updateConversationStatus(Conversation $conversation, ConversationStatus $status): Conversation
     {
+        $previousStatus = $conversation->status;
         $conversation->status = $status;
 
         if ($status === ConversationStatus::CLOSED) {
-            $conversation->closed_at = now();
             $conversation->last_closed_at = CarbonImmutable::now();
-        } else {
-            $conversation->closed_at = null;
         }
 
-        if ($status === ConversationStatus::OPEN) {
-            $conversation->last_open_at = CarbonImmutable::now();
+        if ($status === ConversationStatus::OPEN && $previousStatus === ConversationStatus::CLOSED) {
+            $conversation->last_opened_at = CarbonImmutable::now();
         }
 
         if ($status === ConversationStatus::ASSIGNED) {
@@ -102,13 +86,9 @@ class UserCommunicationRepository implements UserCommunicationRepositoryInterfac
         return $conversation->refresh();
     }
 
-    public function touchConversationLastAssignedCallIfNull(Conversation $conversation): void
+    public function touchConversationLastAssignRequest(Conversation $conversation): void
     {
-        if ($conversation->last_assigned_call !== null) {
-            return;
-        }
-
-        $conversation->last_assigned_call = CarbonImmutable::now();
+        $conversation->last_assign_request = CarbonImmutable::now();
         $conversation->save();
     }
 
@@ -156,29 +136,13 @@ class UserCommunicationRepository implements UserCommunicationRepositoryInterfac
         ?int $senderUserId,
         ?string $messageText
     ): ConversationMessage {
-        try {
-            return ConversationMessage::query()->create([
-                'conversation_id' => $conversationId,
-                'sender_type' => $senderType,
-                'sender_user_id' => $senderUserId,
-                'message_type' => $messageType,
-                'message_text' => $messageText,
-            ]);
-        } catch (Throwable $exception) {
-            Log::error('conversation.message_create_failed', [
-                'conversation_id' => $conversationId,
-                'sender_type' => $senderType->value,
-                'message_type' => $messageType->value,
-                'error' => $exception->getMessage(),
-            ]);
-
-            throw new ApiDomainException(
-                ApiDomainErrorCode::INTERNAL_SERVER_ERROR,
-                'Failed to create conversation message.',
-                null,
-                ApiDomainStatus::INTERNAL_SERVER_ERROR
-            );
-        }
+        return ConversationMessage::query()->create([
+            'conversation_id' => $conversationId,
+            'sender_type' => $senderType,
+            'sender_user_id' => $senderUserId,
+            'message_type' => $messageType,
+            'message_text' => $messageText,
+        ]);
     }
 
     public function findMessageByIdAndConversationId(int $messageId, int $conversationId): ?ConversationMessage
@@ -194,6 +158,22 @@ class UserCommunicationRepository implements UserCommunicationRepositoryInterfac
         return Conversation::query()
             ->where('status', ConversationStatus::OPEN)
             ->where('last_message_at', '<', $before)
+            ->get();
+    }
+
+    public function findNonClosedStaleConversations(CarbonInterface $before): Collection
+    {
+        return Conversation::query()
+            ->where('status', '!=', ConversationStatus::CLOSED)
+            ->where('updated_at', '<', $before)
+            ->get();
+    }
+
+    public function findNonClosedConversationsByUserId(int $userId): Collection
+    {
+        return Conversation::query()
+            ->where('user_id', $userId)
+            ->where('status', '!=', ConversationStatus::CLOSED)
             ->get();
     }
 }

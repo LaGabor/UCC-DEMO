@@ -14,6 +14,8 @@ interface EventRepositoryInterface
 
     public function createForUserId(int $userId, UpsertEventData $data): Event;
 
+    public function findById(int $eventId): ?Event;
+
     public function findByIdAndUserId(int $eventId, int $userId): ?Event;
 
     public function updateDescription(Event $event, UpdateEventDescriptionData $data): Event;

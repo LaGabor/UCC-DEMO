@@ -24,7 +24,7 @@ export async function acceptInvitation(
         password_confirmation: string
     }
 ): Promise<void> {
-    await apiClient.post(
+    await apiClient.patch(
         `/api/public/user-invitations/${encodeURIComponent(token)}/accept`,
         payload
     )

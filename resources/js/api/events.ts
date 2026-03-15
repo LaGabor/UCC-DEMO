@@ -32,7 +32,7 @@ export async function getEvent(eventId: number): Promise<EventItem> {
 }
 
 export async function updateEvent(eventId: number, payload: EventUpdateDescriptionPayload): Promise<EventItem> {
-    const response = await apiClient.put<SuccessResponse<EventItem>>(`/api/events/${eventId}`, payload)
+    const response = await apiClient.patch<SuccessResponse<EventItem>>(`/api/events/${eventId}`, payload)
     return response.data.data
 }
 

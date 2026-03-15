@@ -41,3 +41,9 @@ export enum ConversationMessageType {
     SYSTEM_NOTICE = 'system_notice',
     SYSTEM_ERROR = 'system_error',
 }
+
+export enum ConversationBroadcastType {
+    STATUS_CHANGE = 'status_change',
+    STATUS_CHANGE_OBJECT = 'status_change_object',
+    MESSAGE = 'message',
+}

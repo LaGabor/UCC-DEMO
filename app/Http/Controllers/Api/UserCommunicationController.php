@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Services\UserCommunicationServiceInterface;
+use App\Data\Communication\CloseUserCommunicationInputData;
 use App\Data\Communication\UpdateConversationStatusData;
 use App\Data\Communication\UserMessageInputData;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\API\Communication\CloseUserCommunicationRequest;
 use App\Http\Requests\API\Communication\SendUserMessageRequest;
 use App\Http\Requests\API\Communication\UpdateConversationStatusRequest;
 use App\Support\ApiResponse;
@@ -27,7 +29,7 @@ class UserCommunicationController extends Controller
 
     public function sendUserMessage(SendUserMessageRequest $request): JsonResponse
     {
-        $payload = $this->userCommunicationService->sendUserMessage(
+        $payload = $this->userCommunicationService->createUserMessage(
             $request->user()->id,
             UserMessageInputData::fromRequest($request)
         );
@@ -50,6 +52,16 @@ class UserCommunicationController extends Controller
         $payload = $this->userCommunicationService->cancelCall(
             $request->user()->id,
             UpdateConversationStatusData::fromRequest($request)
+        );
+
+        return ApiResponse::success($payload->toArray());
+    }
+
+    public function closeUserCommunication(CloseUserCommunicationRequest $request): JsonResponse
+    {
+        $payload = $this->userCommunicationService->closeUserCommunication(
+            $request->user()->id,
+            CloseUserCommunicationInputData::fromRequest($request)
         );
 
         return ApiResponse::success($payload->toArray());

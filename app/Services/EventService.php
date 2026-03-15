@@ -9,10 +9,7 @@ use App\Data\Events\EventFiltersData;
 use App\Data\Events\EventListData;
 use App\Data\Events\UpsertEventData;
 use App\Data\Events\UpdateEventDescriptionData;
-use App\Enums\ApiDomainErrorCode;
-use App\Enums\ApiDomainStatus;
-use App\Exceptions\ApiDomainException;
-use Illuminate\Support\Facades\Log;
+use App\Models\Event;
 
 class EventService implements EventServiceInterface
 {
@@ -35,45 +32,21 @@ class EventService implements EventServiceInterface
         return EventData::fromModel($event);
     }
 
-    public function getForUser(int $userId, int $eventId): EventData
+    public function get(Event $event): EventData
     {
-        $event = $this->resolveOwnedEvent($userId, $eventId);
-
         return EventData::fromModel($event);
     }
 
-    public function updateForUser(int $userId, int $eventId, UpdateEventDescriptionData $data): EventData
+    public function update(Event $event, UpdateEventDescriptionData $data): EventData
     {
-        $event = $this->resolveOwnedEvent($userId, $eventId);
         $updated = $this->eventRepository->updateDescription($event, $data);
 
         return EventData::fromModel($updated);
     }
 
-    public function deleteForUser(int $userId, int $eventId): void
+    public function delete(Event $event): void
     {
-        $event = $this->resolveOwnedEvent($userId, $eventId);
         $this->eventRepository->delete($event);
-    }
-
-    private function resolveOwnedEvent(int $userId, int $eventId): \App\Models\Event
-    {
-        $event = $this->eventRepository->findByIdAndUserId($eventId, $userId);
-
-        if (! $event) {
-            Log::warning('event.not_found_or_not_owned', [
-                'user_id' => $userId,
-                'event_id' => $eventId,
-            ]);
-            throw new ApiDomainException(
-                ApiDomainErrorCode::EVENT_NOT_FOUND,
-                'Event not found.',
-                null,
-                ApiDomainStatus::NOT_FOUND
-            );
-        }
-
-        return $event;
     }
 }
 

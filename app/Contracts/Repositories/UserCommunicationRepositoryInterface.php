@@ -20,11 +20,13 @@ interface UserCommunicationRepositoryInterface
 
     public function findConversationById(int $conversationId): ?Conversation;
 
+    public function findConversationsAssignedToAgent(int $agentId): Collection;
+
     public function createConversation(int $userId, ConversationStatus $status): Conversation;
 
     public function updateConversationStatus(Conversation $conversation, ConversationStatus $status): Conversation;
 
-    public function touchConversationLastAssignedCallIfNull(Conversation $conversation): void;
+    public function touchConversationLastAssignRequest(Conversation $conversation): void;
 
     public function touchConversationLastMessageAt(Conversation $conversation, CarbonInterface $timestamp): void;
 
@@ -42,8 +44,9 @@ interface UserCommunicationRepositoryInterface
 
     public function findMessageByIdAndConversationId(int $messageId, int $conversationId): ?ConversationMessage;
 
-    /**
-     * @return Collection<int, Conversation>
-     */
     public function findOpenConversationsWithLastMessageBefore(CarbonInterface $before): Collection;
+
+    public function findNonClosedStaleConversations(CarbonInterface $before): Collection;
+
+    public function findNonClosedConversationsByUserId(int $userId): Collection;
 }

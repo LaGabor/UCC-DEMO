@@ -32,8 +32,6 @@ services:
     environment:
       OLLAMA_URL: http://ollama:11434/api/generate
     entrypoint: /var/www/php/docker/php/entrypoint.sh
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   node:
     image: node:22-bookworm
@@ -62,8 +60,6 @@ services:
     env_file:
       - .env
     command: php artisan reverb:start --host=0.0.0.0 --port=8081
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   queue-worker-mail:
     image: ucc-demo-php
@@ -89,8 +85,6 @@ services:
       --max-jobs=1000
       --max-time=3600
     stop_grace_period: 60s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   queue-worker-bot-messages-1:
     image: ucc-demo-php
@@ -117,8 +111,6 @@ services:
       --max-jobs=1000
       --max-time=3600
     stop_grace_period: 60s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   queue-worker-bot-messages-2:
     extends: queue-worker-bot-messages-1
@@ -148,7 +140,6 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
-    # Pull model after first start: docker compose -f docker-compose.local.yml exec ollama ollama run llama3.2
 
   mailpit:
     image: axllent/mailpit:latest

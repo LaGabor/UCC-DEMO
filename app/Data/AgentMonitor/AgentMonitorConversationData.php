@@ -17,6 +17,7 @@ class AgentMonitorConversationData
         public readonly ?string $lastAssignedAt,
         public readonly ?string $lastClosedAt,
         public readonly ?string $lastOpenAt,
+        public readonly ?string $lastMessageAt,
     ) {
     }
 
@@ -32,10 +33,11 @@ class AgentMonitorConversationData
             assignedAgentId: $conversation->assigned_agent_id,
             status: $conversation->status->value,
             createdAt: $conversation->created_at->toIso8601String(),
-            lastAssignedCall: $conversation->last_assigned_call?->toIso8601String(),
+            lastAssignedCall: $conversation->last_assign_request?->toIso8601String(),
             lastAssignedAt: $conversation->last_assigned_at?->toIso8601String(),
             lastClosedAt: $conversation->last_closed_at?->toIso8601String(),
-            lastOpenAt: $conversation->last_open_at?->toIso8601String(),
+            lastOpenAt: $conversation->last_opened_at?->toIso8601String(),
+            lastMessageAt: $conversation->last_message_at?->toIso8601String(),
         );
     }
 
@@ -48,10 +50,11 @@ class AgentMonitorConversationData
             'assigned_agent_id' => $this->assignedAgentId,
             'status' => $this->status,
             'created_at' => $this->createdAt,
-            'last_assigned_call' => $this->lastAssignedCall,
+            'last_assign_request' => $this->lastAssignedCall,
             'last_assigned_at' => $this->lastAssignedAt,
             'last_closed_at' => $this->lastClosedAt,
             'last_open_at' => $this->lastOpenAt,
+            'last_message_at' => $this->lastMessageAt,
         ];
     }
 }

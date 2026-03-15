@@ -6,9 +6,11 @@
         "build": "vite build",
         "dev": "vite",
         "type-check": "vue-tsc --noEmit",
-        "pnpm-sync": "docker compose -f docker-compose.local.yml exec node sh -lc 'corepack enable && corepack prepare pnpm@9.11.0 --activate && pnpm install'"
+        "pnpm-sync": "docker compose -f docker-compose.local.yml exec node sh -lc 'corepack enable && corepack prepare pnpm@9.11.0 --activate && pnpm install'",
+        "diagrams:pdf": "for f in docs/diagrams/*.mmd; do pnpm exec mmdc -i \"$f\" -o \"${f%.mmd}.pdf\" -e pdf -s 2 -p docs/diagrams/puppeteer-config.json -q; done"
     },
     "devDependencies": {
+        "@mermaid-js/mermaid-cli": "^11.12.0",
         "@tailwindcss/vite": "^4.0.0",
         "@types/node": "^25.3.5",
         "@vitejs/plugin-vue": "^6.0.4",

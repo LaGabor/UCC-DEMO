@@ -10,11 +10,14 @@ use App\Enums\ConversationMessageSenderType;
 use App\Enums\ConversationMessageType;
 use App\Enums\ConversationStatus;
 use App\Enums\MessageResponseSetting;
+use App\Enums\ApiDomainErrorCode;
+use App\Enums\ApiDomainStatus;
 use App\Enums\MessageStrength;
-use App\Events\ConversationMessageBroadcasted;
+use App\Exceptions\ApiDomainException;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class MessageRouterService implements MessageRouterServiceInterface
 {
@@ -66,7 +69,7 @@ class MessageRouterService implements MessageRouterServiceInterface
         };
 
         if ($resolvedMessage === null) {
-            $errorMessage = $this->userCommunicationRepository->createMessage(
+            $errorMessage = $this->createMessageOrFail(
                 $conversation->id,
                 ConversationMessageSenderType::SYSTEM,
                 ConversationMessageType::SYSTEM_ERROR,
@@ -77,11 +80,10 @@ class MessageRouterService implements MessageRouterServiceInterface
             $conversation->last_message_at = now();
             $conversation->save();
 
-            broadcast(new ConversationMessageBroadcasted($conversation->refresh(), $errorMessage));
             return;
         }
 
-        $botMessage = $this->userCommunicationRepository->createMessage(
+        $botMessage = $this->createMessageOrFail(
             $conversation->id,
             ConversationMessageSenderType::BOT,
             ConversationMessageType::BOT_ANSWER,
@@ -91,17 +93,10 @@ class MessageRouterService implements MessageRouterServiceInterface
 
         $conversation->last_message_at = now();
         $conversation->save();
-
-        broadcast(new ConversationMessageBroadcasted($conversation->refresh(), $botMessage));
     }
 
-    /**
-     * Hybrid: system bot first. If it has a valid answer, return it (Ollama is not called).
-     * Otherwise fall back to LLM (Ollama).
-     */
     private function resolveHybrid(Conversation $conversation, ConversationMessage $userMessage): ?string
     {
-        dd($conversation);
         $systemDecision = $this->systemMessageBotService->resolve($conversation, $userMessage);
         if (
             $systemDecision->strength->value > MessageStrength::VERY_WEAK->value
@@ -126,5 +121,39 @@ class MessageRouterService implements MessageRouterServiceInterface
     private function resolveFromLlm(Conversation $conversation, ConversationMessage $userMessage): ?string
     {
         return $this->largeLanguageMessageResponderService->resolve($conversation, $userMessage);
+    }
+
+    /**
+     * @throws ApiDomainException
+     */
+    private function createMessageOrFail(
+        int $conversationId,
+        ConversationMessageSenderType $senderType,
+        ConversationMessageType $messageType,
+        ?int $senderUserId,
+        ?string $messageText
+    ): ConversationMessage {
+        try {
+            return $this->userCommunicationRepository->createMessage(
+                $conversationId,
+                $senderType,
+                $messageType,
+                $senderUserId,
+                $messageText
+            );
+        } catch (Throwable $e) {
+            Log::error('conversation.message_create_failed', [
+                'conversation_id' => $conversationId,
+                'sender_type' => $senderType->value,
+                'message_type' => $messageType->value,
+                'error' => $e->getMessage(),
+            ]);
+            throw new ApiDomainException(
+                ApiDomainErrorCode::INTERNAL_SERVER_ERROR,
+                'Failed to create conversation message.',
+                null,
+                ApiDomainStatus::INTERNAL_SERVER_ERROR
+            );
+        }
     }
 }

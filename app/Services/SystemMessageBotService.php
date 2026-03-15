@@ -37,18 +37,18 @@ class SystemMessageBotService implements SystemMessageBotServiceInterface
         $langScores = ['hu' => 0, 'en' => 0];
 
         $wordCount = count($words);
-        for ($i = 0; $i < $wordCount; $i++) {
-            $phrase1 = $words[$i];
-            $this->matchKeyword($phrase1, $searchWords, $scopeScores, $langScores);
+        for ($wordIndex = 0; $wordIndex < $wordCount; $wordIndex++) {
+            $singleWordPhrase = $words[$wordIndex];
+            $this->matchKeyword($singleWordPhrase, $searchWords, $scopeScores, $langScores);
 
-            if ($i + 1 < $wordCount) {
-                $phrase2 = $words[$i] . ' ' . $words[$i + 1];
-                $this->matchKeyword($phrase2, $searchWords, $scopeScores, $langScores);
+            if ($wordIndex + 1 < $wordCount) {
+                $twoWordPhrase = $words[$wordIndex] . ' ' . $words[$wordIndex + 1];
+                $this->matchKeyword($twoWordPhrase, $searchWords, $scopeScores, $langScores);
             }
 
-            if ($i + 2 < $wordCount) {
-                $phrase3 = $words[$i] . ' ' . $words[$i + 1] . ' ' . $words[$i + 2];
-                $this->matchKeyword($phrase3, $searchWords, $scopeScores, $langScores);
+            if ($wordIndex + 2 < $wordCount) {
+                $threeWordPhrase = $words[$wordIndex] . ' ' . $words[$wordIndex + 1] . ' ' . $words[$wordIndex + 2];
+                $this->matchKeyword($threeWordPhrase, $searchWords, $scopeScores, $langScores);
             }
         }
 
@@ -90,9 +90,9 @@ class SystemMessageBotService implements SystemMessageBotServiceInterface
             return;
         }
 
-        foreach ($searchWords[$phrase] as $entry) {
-            $scope = $entry['scope'] ?? '';
-            $lang = $entry['lang'] ?? 'hu';
+        foreach ($searchWords[$phrase] as $keywordEntry) {
+            $scope = $keywordEntry['scope'] ?? '';
+            $lang = $keywordEntry['lang'] ?? 'hu';
 
             if ($scope !== '') {
                 $scopeScores[$scope] = ($scopeScores[$scope] ?? 0) + 1;
@@ -106,12 +106,12 @@ class SystemMessageBotService implements SystemMessageBotServiceInterface
 
     private function normalizeInputForMatching(string $input): string
     {
-        $s = mb_strtolower(trim($input), 'UTF-8');
-        $s = strtr($s, self::ACCENT_MAP);
-        $s = preg_replace('/[^\p{L}\p{N}\s]/u', '', $s);
-        $s = preg_replace('/\s+/u', ' ', $s);
+        $normalizedText = mb_strtolower(trim($input), 'UTF-8');
+        $normalizedText = strtr($normalizedText, self::ACCENT_MAP);
+        $normalizedText = preg_replace('/[^\p{L}\p{N}\s]/u', '', $normalizedText);
+        $normalizedText = preg_replace('/\s+/u', ' ', $normalizedText);
 
-        return $s;
+        return $normalizedText;
     }
 
     private function scoreToStrength(int $score): MessageStrength

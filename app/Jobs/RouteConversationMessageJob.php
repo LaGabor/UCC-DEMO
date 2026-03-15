@@ -3,10 +3,9 @@
 namespace App\Jobs;
 
 use App\Contracts\Repositories\UserCommunicationRepositoryInterface;
-use App\Contracts\Services\MessageRouterServiceInterface;
+use App\Contracts\Services\LLMServiceInterface;
 use App\Enums\ConversationMessageSenderType;
 use App\Enums\ConversationMessageType;
-use App\Events\ConversationMessageBroadcasted;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -21,9 +20,9 @@ class RouteConversationMessageJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
-    public int $tries = 3;
+    public int $tries = 2;
 
-    public int $timeout = 180;
+    public int $timeout = 3;
 
     public function __construct(
         public readonly int $conversationId,
@@ -32,7 +31,7 @@ class RouteConversationMessageJob implements ShouldQueue
         $this->onQueue('bot-messages');
     }
 
-    public function handle(MessageRouterServiceInterface $messageRouterService): void
+    public function handle(LLMServiceInterface $messageRouterService): void
     {
         $messageRouterService->routeUserMessage($this->conversationId, $this->userMessageId);
     }
@@ -62,8 +61,6 @@ class RouteConversationMessageJob implements ShouldQueue
 
             $conversation->last_message_at = now();
             $conversation->save();
-
-            broadcast(new ConversationMessageBroadcasted($conversation->refresh(), $errorMessage));
         } catch (\Throwable $e) {
             Log::warning('communication.route.failed_broadcast_error', [
                 'conversation_id' => $this->conversationId,

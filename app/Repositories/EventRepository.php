@@ -45,6 +45,11 @@ class EventRepository implements EventRepositoryInterface
         ]);
     }
 
+    public function findById(int $eventId): ?Event
+    {
+        return Event::query()->find($eventId);
+    }
+
     public function findByIdAndUserId(int $eventId, int $userId): ?Event
     {
         return Event::query()

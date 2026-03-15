@@ -11,8 +11,12 @@ import EventsPage from '../pages/EventsPage.vue'
 import EventFormPage from '../pages/EventFormPage.vue'
 import AgentMonitorPage from '../pages/AgentMonitorPage.vue'
 import ConversationHistoryPage from '../pages/ConversationHistoryPage.vue'
+import NotFoundPage from '../pages/NotFoundPage.vue'
+import ForbiddenPage from '../pages/ForbiddenPage.vue'
+import { getEvent } from '../api/events'
 import { useAuth } from '../auth'
 import { UserRole } from '../types/enums'
+import type { EventItem } from '../types/events'
 
 export const ROUTE_NAMES = {
     HOME: 'home',
@@ -29,6 +33,7 @@ export const ROUTE_NAMES = {
     TWO_FACTOR_SETTINGS: 'two-factor-settings',
     TWO_FACTOR_CHALLENGE: 'two-factor-challenge',
     NOT_FOUND: 'not-found',
+    FORBIDDEN: 'forbidden',
 }
 
 export const appRoutes: RouteRecordRaw[] = [
@@ -111,9 +116,29 @@ export const appRoutes: RouteRecordRaw[] = [
         path: '/events/:id/edit',
         name: ROUTE_NAMES.EVENT_EDIT,
         component: EventFormPage,
+        props: (route) => ({
+            initialEvent: (route.meta as { fetchedEvent?: EventItem }).fetchedEvent ?? null,
+        }),
         meta: {
             layout: 'app',
             requiresAuth: true,
+        },
+        beforeEnter: async (to, _from, next) => {
+            const id = Number(to.params.id)
+            if (!Number.isInteger(id) || id <= 0) {
+                next({ path: '/404' })
+                return
+            }
+            try {
+                const event = await getEvent(id)
+                ;(to.meta as { fetchedEvent?: EventItem }).fetchedEvent = event
+                next()
+            } catch (err: unknown) {
+                const status = (err as { response?: { status?: number } })?.response?.status
+                if (status === 403) next({ path: '/403' })
+                else if (status === 404) next({ path: '/404' })
+                else next(false)
+            }
         },
     },
     {
@@ -180,10 +205,21 @@ export const appRoutes: RouteRecordRaw[] = [
         },
     },
     {
+        path: '/403',
+        name: ROUTE_NAMES.FORBIDDEN,
+        component: ForbiddenPage,
+        meta: {
+            layout: 'app',
+        },
+    },
+    {
         name: ROUTE_NAMES.NOT_FOUND,
-        path: '/:catchAll(.*)',
-        redirect: '/',
-    }
+        path: '/:pathMatch(.*)*',
+        component: NotFoundPage,
+        meta: {
+            layout: 'app',
+        },
+    },
 ]
 
 const router = createRouter({

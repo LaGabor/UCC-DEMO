@@ -17,15 +17,22 @@
                 >
                     {{ actionLabel }}
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-light" @click="$emit('close')">
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-light"
+                    :disabled="speechRecognition.isListening.value"
+                    aria-label="Close"
+                    @click="$emit('close')"
+                >
                     <i class="bi bi-x-lg" />
                 </button>
             </div>
         </header>
 
-        <div ref="messagesContainer" class="admin-chat__messages">
-            <div
-                v-for="message in orderedMessages"
+        <div class="admin-chat__messages-wrapper">
+            <div ref="messagesContainer" class="admin-chat__messages">
+                <div
+                    v-for="message in orderedMessages"
                 :key="message.id"
                 class="message-row"
                 :class="messageRowClass(message.message_type)"
@@ -40,16 +47,50 @@
                 </div>
             </div>
         </div>
+            <div
+                v-if="speechRecognition.isListening.value"
+                class="admin-chat__messages-overlay"
+                aria-hidden="true"
+                role="button"
+                :aria-label="t('chat.stopRecording')"
+                tabindex="0"
+                @click.stop="stopSpeechInput"
+                @keydown.enter.space.prevent="stopSpeechInput"
+            >
+                <i class="bi bi-mic-fill admin-chat__listening-icon" />
+            </div>
+        </div>
 
         <form class="admin-chat__form" @submit.prevent="emitSend">
-            <input
-                v-model="draft"
-                type="text"
-                class="form-control"
-                :placeholder="inputPlaceholder"
-                autocomplete="off"
-                :disabled="inputDisabled"
-            />
+            <div class="position-relative admin-chat__input-wrapper">
+                <input
+                    ref="adminChatInputRef"
+                    :value="displayedDraft"
+                    type="text"
+                    class="form-control admin-chat__input-with-actions"
+                    :placeholder="inputPlaceholder"
+                    autocomplete="off"
+                    :disabled="inputDisabled"
+                    @input="onDraftInput"
+                />
+                <div
+                    class="position-absolute top-50 end-0 translate-middle-y admin-chat__input-actions d-flex align-items-center pe-2"
+                    @click="adminChatInputRef?.focus()"
+                >
+                    <button
+                        v-if="speechRecognition.isSupported"
+                        type="button"
+                        class="btn btn-link btn-sm p-1 text-secondary admin-chat__mic-btn"
+                        :class="{ 'admin-chat__mic-btn--active': speechRecognition.isListening.value }"
+                        :disabled="inputDisabled"
+                        :title="t('chat.speechToText')"
+                        :aria-label="t('chat.speechToText')"
+                        @click.stop.prevent="toggleSpeechInput"
+                    >
+                        <i class="bi" :class="speechRecognition.isListening.value ? 'bi-mic-mute-fill' : 'bi-mic-fill'" />
+                    </button>
+                </div>
+            </div>
             <button type="submit" class="btn btn-primary" :disabled="!canSend || inputDisabled">
                 <i class="bi bi-send-fill" />
             </button>
@@ -58,7 +99,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useSpeechRecognition } from '../composables/useSpeechRecognition'
 import { ConversationMessageSenderType, ConversationMessageType } from '../types/enums'
 
 type AdminChatMessage = {
@@ -86,29 +129,80 @@ const emit = defineEmits<{
     action: []
 }>()
 
+const { t } = useI18n()
 const messagesContainer = ref<HTMLElement | null>(null)
+const adminChatInputRef = ref<HTMLInputElement | null>(null)
 const draft = ref('')
+const interimTranscript = ref('')
+
+const speechRecognition = useSpeechRecognition({
+    onFinalTranscript(text) {
+        const trimmed = text.trim()
+        if (!trimmed) return
+        draft.value = draft.value ? `${draft.value} ${trimmed}` : trimmed
+        interimTranscript.value = ''
+    },
+    onInterimTranscript(text) {
+        interimTranscript.value = text
+    },
+})
+
+const displayedDraft = computed(
+    () => draft.value + (interimTranscript.value ? ` ${interimTranscript.value}` : '')
+)
+
+function onDraftInput(event: Event): void {
+    const target = event.target as HTMLInputElement
+    draft.value = target.value
+    interimTranscript.value = ''
+}
+
+function toggleSpeechInput(): void {
+    if (props.inputDisabled) return
+    speechRecognition.toggle()
+}
+
+function stopSpeechInput(): void {
+    if (!speechRecognition.isListening.value) return
+    speechRecognition.stop()
+    flushInterimToDraft()
+}
+
+function flushInterimToDraft(): void {
+    if (interimTranscript.value) {
+        draft.value = (draft.value + (draft.value ? ' ' : '') + interimTranscript.value).trim()
+        interimTranscript.value = ''
+    }
+}
 
 const orderedMessages = computed(() =>
     [...props.messages].sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        (messageA, messageB) =>
+            new Date(messageA.created_at).getTime() -
+            new Date(messageB.created_at).getTime()
     )
 )
 
-const canSend = computed(() => draft.value.trim().length > 0)
+function scrollMessagesToBottom(): void {
+    if (!messagesContainer.value) return
+    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+}
+
+const canSend = computed(() => displayedDraft.value.trim().length > 0)
 
 function emitSend(): void {
     if (props.inputDisabled) {
         return
     }
 
-    const content = draft.value.trim()
+    const content = displayedDraft.value.trim()
     if (!content) {
         return
     }
 
     emit('send', content)
     draft.value = ''
+    interimTranscript.value = ''
 }
 
 function senderLabel(sender: ConversationMessageSenderType): string {
@@ -160,15 +254,36 @@ function formatDateTime(value: string): string {
 watch(
     () => orderedMessages.value.length,
     async () => {
-        if (!messagesContainer.value) {
-            return
-        }
-
         await nextTick()
-        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+        scrollMessagesToBottom()
     },
     { immediate: true }
 )
+
+watch(
+    () => props.messages,
+    async () => {
+        await nextTick()
+        requestAnimationFrame(() => scrollMessagesToBottom())
+    },
+    { deep: true }
+)
+
+onMounted(async () => {
+    await nextTick()
+    requestAnimationFrame(() => scrollMessagesToBottom())
+})
+
+watch(
+    () => speechRecognition.isListening.value,
+    (isListening, wasListening) => {
+        if (wasListening && !isListening) flushInterimToDraft()
+    }
+)
+
+onBeforeUnmount(() => {
+    speechRecognition.stop()
+})
 </script>
 
 <style scoped>
@@ -182,12 +297,38 @@ watch(
     padding: 0.8rem 1rem;
 }
 
+.admin-chat__messages-wrapper {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
 .admin-chat__messages {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     padding: 1rem;
     background: #f7f8fc;
+}
+
+.admin-chat__messages-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    cursor: pointer;
+}
+
+.admin-chat__listening-icon {
+    font-size: 3.5rem;
+    color: #0d6efd;
+    opacity: 1;
 }
 
 .message-row {
@@ -247,5 +388,39 @@ watch(
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 0.55rem;
+}
+
+.admin-chat__input-wrapper {
+    position: relative;
+}
+
+.admin-chat__input-with-actions {
+    padding-right: 2.75rem;
+}
+
+.admin-chat__input-actions {
+    z-index: 2;
+    cursor: text;
+}
+
+.admin-chat__input-actions .admin-chat__mic-btn {
+    cursor: pointer;
+}
+
+.admin-chat__mic-btn {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.admin-chat__mic-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.admin-chat__mic-btn--active {
+    color: var(--bs-primary) !important;
 }
 </style>

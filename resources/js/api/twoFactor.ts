@@ -44,7 +44,6 @@ function normalizeRecoveryCodes(value: unknown): string[] {
                 return parsed.filter((item): item is string => typeof item === 'string')
             }
         } catch {
-            // Fall back to line-based parsing below.
         }
 
         return value

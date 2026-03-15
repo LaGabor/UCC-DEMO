@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import type { AuthUser } from './types/auth'
 import { Language, UserRole } from './types/enums'
 import { fetchCurrentUser, logoutRequest, updatePreferredLocaleRequest } from './api/auth'
+import { closeUserCommunicationRequest } from './api/communication'
 import { authState, clearAuthState } from './authState'
 import { setAppLocale } from './i18n'
 
@@ -33,13 +34,22 @@ async function ensureAuthLoaded(): Promise<void> {
 }
 
 async function logout(): Promise<void> {
-    await logoutRequest()
+    try {
+        await closeUserCommunicationRequest({ conversation_id: null })
+    } catch {
+    }
     authState.user = null
     authState.initialized = true
+    await logoutRequest()
 }
 
 async function updatePreferredLocale(language: Language): Promise<void> {
-    await updatePreferredLocaleRequest(language)
+    try{
+        await updatePreferredLocaleRequest(language)
+    }
+    catch{
+
+    }
     setAppLocale(language)
 
     if (authState.user) {

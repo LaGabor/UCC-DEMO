@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Actions\BotAnswerRouter;
 use App\Contracts\Repositories\UserCommunicationRepositoryInterface;
-use App\Contracts\Services\SystemMessageBotServiceInterface;
 use App\Contracts\Services\UserCommunicationServiceInterface;
+use App\Data\Communication\CloseUserCommunicationInputData;
+use App\Data\Communication\CloseUserCommunicationResultData;
 use App\Data\Communication\UpdateConversationStatusData;
 use App\Data\Communication\UserMessageAcceptedData;
 use App\Data\Communication\UserMessageInputData;
@@ -14,21 +16,18 @@ use App\Enums\ApiDomainStatus;
 use App\Enums\ConversationMessageSenderType;
 use App\Enums\ConversationMessageType;
 use App\Enums\ConversationStatus;
-use App\Enums\MessageResponseSetting;
-use App\Enums\MessageStrength;
-use App\Events\AgentMonitorConversationBroadcasted;
-use App\Events\ConversationMessageBroadcasted;
-use App\Events\ConversationStatusBroadcasted;
 use App\Exceptions\ApiDomainException;
-use App\Jobs\RouteConversationMessageJob;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class UserCommunicationService implements UserCommunicationServiceInterface
 {
     public function __construct(
         private readonly UserCommunicationRepositoryInterface $userCommunicationRepository,
-        private readonly SystemMessageBotServiceInterface $systemMessageBotService,
+        private readonly BotAnswerRouter $botAnswerRouter,
     ) {
     }
 
@@ -52,7 +51,7 @@ class UserCommunicationService implements UserCommunicationServiceInterface
     /**
      * @throws ApiDomainException
      */
-    public function sendUserMessage(int $userId, UserMessageInputData $data): UserMessageAcceptedData
+    public function createUserMessage(int $userId, UserMessageInputData $data): UserMessageAcceptedData
     {
         $conversation = $this->resolveConversationForUserMessage(
             $userId,
@@ -60,76 +59,37 @@ class UserCommunicationService implements UserCommunicationServiceInterface
             $data->conversationStatus
         );
 
-        $userMessage = $this->userCommunicationRepository->createMessage(
-            $conversation->id,
-            ConversationMessageSenderType::USER,
-            ConversationMessageType::QUESTION,
-            $userId,
-            $data->messageText
-        );
-
-        $this->userCommunicationRepository->touchConversationLastMessageAt($conversation, CarbonImmutable::now());
-        $conversation = $conversation->refresh();
-
-        broadcast(new ConversationMessageBroadcasted($conversation, $userMessage));
-
-        $setting = MessageResponseSetting::tryFrom(
-            (string) config('communication.message_response_setting', MessageResponseSetting::HYBRID->value)
-        ) ?? MessageResponseSetting::HYBRID;
-
-        if ($conversation->status === ConversationStatus::ASSIGNED) {
-            return new UserMessageAcceptedData(
-                conversationId: $conversation->id,
-                status: $conversation->status
+        try {
+            $userMessage = $this->userCommunicationRepository->createMessage(
+                $conversation->id,
+                ConversationMessageSenderType::USER,
+                ConversationMessageType::QUESTION,
+                $userId,
+                $data->messageText
+            );
+            $this->userCommunicationRepository->touchConversationLastMessageAt(
+                $conversation,
+                CarbonImmutable::now()
+            );
+        } catch (Throwable $e) {
+            Log::error('conversation.message_create_failed', [
+                'conversation_id' => $conversation->id,
+                'sender_type' => ConversationMessageSenderType::USER->value,
+                'message_type' => ConversationMessageType::QUESTION->value,
+                'error' => $e->getMessage(),
+            ]);
+            report($e);
+            throw new ApiDomainException(
+                ApiDomainErrorCode::INTERNAL_SERVER_ERROR,
+                'Failed to create conversation message.',
+                null,
+                ApiDomainStatus::INTERNAL_SERVER_ERROR
             );
         }
 
-        if ($setting === MessageResponseSetting::HYBRID || $setting === MessageResponseSetting::SYSTEM_BOT) {
-            $systemDecision = $this->systemMessageBotService->resolve($conversation, $userMessage);
-            if (
-                $systemDecision->strength->value > MessageStrength::VERY_WEAK->value
-                && $systemDecision->message !== null
-            ) {
+        $conversation = $conversation->refresh();
 
-                $botMessage = $this->userCommunicationRepository->createMessage(
-                    $conversation->id,
-                    ConversationMessageSenderType::BOT,
-                    ConversationMessageType::BOT_ANSWER,
-                    null,
-                    $systemDecision->message
-                );
-                $this->userCommunicationRepository->touchConversationLastMessageAt($conversation, CarbonImmutable::now());
-                broadcast(new ConversationMessageBroadcasted($conversation->refresh(), $botMessage));
-
-                return new UserMessageAcceptedData(
-                    conversationId: $conversation->id,
-                    status: $conversation->status
-                );
-            }
-            if ($setting === MessageResponseSetting::SYSTEM_BOT) {
-                $noAnswerMessage = $this->userCommunicationRepository->createMessage(
-                    $conversation->id,
-                    ConversationMessageSenderType::SYSTEM,
-                    ConversationMessageType::SYSTEM_NOTICE,
-                    null,
-                    'No predefined answer for this question.'
-                );
-                $this->userCommunicationRepository->touchConversationLastMessageAt($conversation, CarbonImmutable::now());
-                broadcast(new ConversationMessageBroadcasted($conversation->refresh(), $noAnswerMessage));
-
-                return new UserMessageAcceptedData(
-                    conversationId: $conversation->id,
-                    status: $conversation->status
-                );
-            }
-        }
-
-        RouteConversationMessageJob::dispatch($conversation->id, $userMessage->id);
-
-        return new UserMessageAcceptedData(
-            conversationId: $conversation->id,
-            status: $conversation->status
-        );
+        return ($this->botAnswerRouter)($conversation, $userMessage);
     }
 
     /**
@@ -164,6 +124,44 @@ class UserCommunicationService implements UserCommunicationServiceInterface
         return UserConversationResponseData::fromConversationAndMessages($conversation, $messages);
     }
 
+    public function closeUserCommunication(int $userId, CloseUserCommunicationInputData $data): CloseUserCommunicationResultData
+    {
+        $closed = [];
+
+        if ($data->conversationId !== null) {
+            $conversation = $this->userCommunicationRepository->findConversationByIdAndUserId(
+                $data->conversationId,
+                $userId
+            );
+
+            if ($conversation && $conversation->status !== ConversationStatus::CLOSED) {
+                $conversation = $this->userCommunicationRepository->updateConversationStatus(
+                    $conversation,
+                    ConversationStatus::CLOSED
+                );
+                $closed[] = [
+                    'conversation_id' => $conversation->id,
+                    'status' => $conversation->status->value,
+                ];
+            }
+        } else {
+            $conversations = $this->userCommunicationRepository->findNonClosedConversationsByUserId($userId);
+
+            foreach ($conversations as $conversation) {
+                $conversation = $this->userCommunicationRepository->updateConversationStatus(
+                    $conversation,
+                    ConversationStatus::CLOSED
+                );
+                $closed[] = [
+                    'conversation_id' => $conversation->id,
+                    'status' => $conversation->status->value,
+                ];
+            }
+        }
+
+        return new CloseUserCommunicationResultData(closed: $closed);
+    }
+
     /**
      * @throws ApiDomainException
      */
@@ -192,7 +190,6 @@ class UserCommunicationService implements UserCommunicationServiceInterface
                     $conversation,
                     $conversationStatus
                 );
-                $this->broadcastConversationStatus($conversation);
             }
 
             return $conversation;
@@ -200,10 +197,7 @@ class UserCommunicationService implements UserCommunicationServiceInterface
 
         $latestConversation = $this->userCommunicationRepository->findLatestConversationByUserId($userId);
         if (! $latestConversation) {
-            $conversation = $this->userCommunicationRepository->createConversation($userId, $conversationStatus);
-            $this->broadcastConversationStatus($conversation);
-
-            return $conversation;
+            return $this->createConversationOrFail($userId, $conversationStatus);
         }
 
         if ($latestConversation->status !== $conversationStatus) {
@@ -211,7 +205,6 @@ class UserCommunicationService implements UserCommunicationServiceInterface
                 $latestConversation,
                 $conversationStatus
             );
-            $this->broadcastConversationStatus($latestConversation);
         }
 
         return $latestConversation;
@@ -239,27 +232,38 @@ class UserCommunicationService implements UserCommunicationServiceInterface
         }
 
         if (! $conversation) {
-            $conversation = $this->userCommunicationRepository->createConversation($userId, $targetStatus);
+            $conversation = $this->createConversationOrFail($userId, $targetStatus);
         } else {
             if ($targetStatus === ConversationStatus::WAITING_HUMAN) {
-                $this->userCommunicationRepository->touchConversationLastAssignedCallIfNull($conversation);
+                $this->userCommunicationRepository->touchConversationLastAssignRequest($conversation);
                 $conversation = $conversation->refresh();
             }
             $conversation = $this->userCommunicationRepository->updateConversationStatus($conversation, $targetStatus);
         }
 
-        $this->broadcastConversationStatus($conversation);
-
         return $conversation;
     }
 
-    private function broadcastConversationStatus(Conversation $conversation): void
+    /**
+     * @throws ApiDomainException
+     */
+    private function createConversationOrFail(int $userId, ConversationStatus $status): Conversation
     {
         try {
-            broadcast(new ConversationStatusBroadcasted($conversation));
-            broadcast(new AgentMonitorConversationBroadcasted($conversation));
-        } catch (\Throwable $e) {
-            report($e);
+            return $this->userCommunicationRepository->createConversation($userId, $status);
+        } catch (Throwable $e) {
+            Log::error('conversation.create_failed', [
+                'user_id' => $userId,
+                'status' => $status->value,
+                'error' => $e->getMessage(),
+            ]);
+            throw new ApiDomainException(
+                ApiDomainErrorCode::INTERNAL_SERVER_ERROR,
+                'Failed to create conversation.',
+                null,
+                ApiDomainStatus::INTERNAL_SERVER_ERROR
+            );
         }
     }
+
 }

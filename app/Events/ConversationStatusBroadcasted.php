@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Enums\ConversationBroadcastType;
 use App\Models\Conversation;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -35,6 +36,7 @@ class ConversationStatusBroadcasted implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return [
+            'type' => ConversationBroadcastType::STATUS_CHANGE->value,
             'conversation_id' => $this->conversation->id,
             'status' => $this->conversation->status->value,
         ];

@@ -134,7 +134,13 @@
                                     </div>
                                     <div class="small text-muted">
                                         {{ t('agentMonitor.activeAgentSince') }}:
-                                        {{ formatElapsed(conversation.activeSinceAt ?? conversation.startedAt) }}
+                                        {{
+                                            formatElapsed(
+                                                conversation.status === ConversationStatus.OPEN
+                                                    ? conversation.startedAt
+                                                    : (conversation.activeSinceAt ?? conversation.startedAt)
+                                            )
+                                        }}
                                     </div>
                                 </div>
 
@@ -198,17 +204,32 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AdminChatWidget from '../components/AdminChatWidget.vue'
+import { fetchAdminOrHelpdeskAgentEligibility } from '../api/auth'
 import { useAuth } from '../auth'
-import { getAgentMonitorConversationsRequest } from '../api/agentMonitor'
-import type { AgentMonitorConversationBroadcastPayload } from '../types/communication'
 import {
+    getAgentMonitorConversationsRequest,
+    getAgentMonitorViewUserChatHistoryRequest,
+    postAgentMonitorAnswerUserChatHistoryRequest,
+    postAgentMonitorCloseAssignedRequest,
+    postAgentMonitorCloseWaitingHumanRequest,
+    postAgentMonitorSendAgentMessageRequest,
+} from '../api/agentMonitor'
+import type {
+    AgentMonitorConversationBatchBroadcastPayload,
+    AgentMonitorConversationBroadcastPayload,
+    AgentMonitorConversationHistoryMessage,
+} from '../types/communication'
+import {
+    ConversationBroadcastType,
     ConversationMessageSenderType,
     ConversationMessageType,
     ConversationStatus,
     UserRole,
 } from '../types/enums'
+import { ROUTE_NAMES } from '../router'
 
 type MonitorConversationStatus = ConversationStatus
 
@@ -230,33 +251,64 @@ type MonitorConversation = {
     messages: MonitorMessage[]
 }
 
+function historyMessageToMonitorMessage(
+    historyMessage: AgentMonitorConversationHistoryMessage
+): MonitorMessage {
+    return {
+        id: String(historyMessage.id),
+        sender: historyMessage.sender_type as MonitorMessage['sender'],
+        message_type: historyMessage.message_type as MonitorMessage['message_type'],
+        content: historyMessage.message_text ?? '',
+        created_at: historyMessage.created_at,
+    }
+}
+
+function setConversationMessages(conversationId: number, messages: MonitorMessage[]): void {
+    const conversationIndex = conversations.value.findIndex(
+        (conversation) => conversation.id === conversationId
+    )
+    if (conversationIndex >= 0) {
+        const updatedConversations = [...conversations.value]
+        updatedConversations[conversationIndex] = {
+            ...updatedConversations[conversationIndex],
+            messages,
+        }
+        conversations.value = updatedConversations
+    }
+}
+
 function payloadToMonitorConversation(
-    p: AgentMonitorConversationBroadcastPayload | {
+    payload: AgentMonitorConversationBroadcastPayload | {
         conversation_id: number
         user_id: number
         user_name: string
         assigned_agent_id: number | null
         status: string
         created_at: string
-        last_assigned_call: string | null
+        last_assign_request: string | null
         last_assigned_at: string | null
         last_closed_at: string | null
         last_open_at: string | null
+        last_message_at: string | null
     }
 ): MonitorConversation {
-    const status = p.status as MonitorConversationStatus
+    const status = payload.status as MonitorConversationStatus
     const startedAt =
-        status === ConversationStatus.WAITING_HUMAN && p.last_assigned_call
-            ? p.last_assigned_call
-            : p.created_at
+        status === ConversationStatus.WAITING_HUMAN && payload.last_assign_request
+            ? payload.last_assign_request
+            : status === ConversationStatus.OPEN && payload.last_open_at
+              ? payload.last_open_at
+              : status === ConversationStatus.ASSIGNED && payload.last_assigned_at
+                ? payload.last_assigned_at
+                : payload.created_at
 
     return {
-        id: p.conversation_id,
-        requesterName: p.user_name,
+        id: payload.conversation_id,
+        requesterName: payload.user_name,
         status,
         startedAt,
-        activeSinceAt: p.last_assigned_at ?? undefined,
-        assignedToUserId: p.assigned_agent_id ?? undefined,
+        activeSinceAt: payload.last_assigned_at ?? undefined,
+        assignedToUserId: payload.assigned_agent_id ?? undefined,
         messages: [],
     }
 }
@@ -265,6 +317,7 @@ const MOBILE_BREAKPOINT_PX = 970
 const ACTIVE_LIST_PAGE_SIZE = 10
 
 const { t } = useI18n()
+const router = useRouter()
 const auth = useAuth()
 
 const nowMs = ref(Date.now())
@@ -277,42 +330,64 @@ const conversations = ref<MonitorConversation[]>([])
 async function loadConversations(): Promise<void> {
     try {
         const list = await getAgentMonitorConversationsRequest()
-        conversations.value = list.map((p) => payloadToMonitorConversation(p))
+        conversations.value = list.map((payload) => payloadToMonitorConversation(payload))
     } catch {
         conversations.value = []
     }
 }
 
+function applySingleStatusChange(payload: AgentMonitorConversationBroadcastPayload): void {
+    if (payload.status === ConversationStatus.CLOSED) {
+        conversations.value = conversations.value.filter(
+            (conversation) => conversation.id !== payload.conversation_id
+        )
+        if (selectedConversationId.value === payload.conversation_id) {
+            selectedConversationId.value = null
+        }
+        return
+    }
+
+    const existingConversationIndex = conversations.value.findIndex(
+        (conversation) => conversation.id === payload.conversation_id
+    )
+    const conversationFromPayload = payloadToMonitorConversation(payload)
+
+    if (existingConversationIndex >= 0) {
+        const existingConversation = conversations.value[existingConversationIndex]
+        conversationFromPayload.messages = existingConversation.messages
+        conversations.value = conversations.value.map((conversation) =>
+            conversation.id === payload.conversation_id ? conversationFromPayload : conversation
+        )
+    } else {
+        conversations.value = [conversationFromPayload, ...conversations.value]
+    }
+
+    if (
+        payload.status === ConversationStatus.WAITING_HUMAN &&
+        !selectedConversation.value
+    ) {
+        playIncomingCallTone()
+    }
+}
+
 function subscribeAgentMonitorChannel(): void {
-    window.Echo.private('agent-monitor').listen(
+    const channel = window.Echo.private('agent-monitor')
+
+    channel.listen(
         '.conversation.status.updated',
         (payload: AgentMonitorConversationBroadcastPayload) => {
-            if (payload.status === ConversationStatus.CLOSED) {
-                conversations.value = conversations.value.filter((c) => c.id !== payload.conversation_id)
-                if (selectedConversationId.value === payload.conversation_id) {
-                    selectedConversationId.value = null
-                }
+            applySingleStatusChange(payload)
+        }
+    )
+
+    channel.listen(
+        '.conversation.status.batch.updated',
+        (payload: AgentMonitorConversationBatchBroadcastPayload) => {
+            if (payload.type !== ConversationBroadcastType.STATUS_CHANGE_OBJECT) {
                 return
             }
-
-            const existing = conversations.value.findIndex((c) => c.id === payload.conversation_id)
-            const next = payloadToMonitorConversation(payload)
-
-            if (existing >= 0) {
-                const prev = conversations.value[existing]
-                next.messages = prev.messages
-                conversations.value = conversations.value.map((c) =>
-                    c.id === payload.conversation_id ? next : c
-                )
-            } else {
-                conversations.value = [next, ...conversations.value]
-            }
-
-            if (
-                payload.status === ConversationStatus.WAITING_HUMAN &&
-                !selectedConversation.value
-            ) {
-                playIncomingCallTone()
+            for (const item of payload.conversations) {
+                applySingleStatusChange(item)
             }
         }
     )
@@ -322,6 +397,65 @@ function unsubscribeAgentMonitorChannel(): void {
     window.Echo.leave('agent-monitor')
 }
 
+let conversationChannelSubscribedId: number | null = null
+
+function subscribeToConversationChannel(conversationId: number): void {
+    if (conversationChannelSubscribedId === conversationId) {
+        return
+    }
+    if (conversationChannelSubscribedId !== null) {
+        window.Echo.leave(`conversation.${conversationChannelSubscribedId}`)
+        conversationChannelSubscribedId = null
+    }
+    const channelName = `conversation.${conversationId}`
+    window.Echo.private(channelName).listen(
+        '.conversation.message.created',
+        (payload: { conversation_id: number; message: { id: number; sender_type: string; message_type: string; message_text: string | null; sender_user_id: number | null; created_at: string } }) => {
+            if (payload.conversation_id !== selectedConversationId.value) {
+                return
+            }
+            const msg = payload.message
+            const isOwnAgentMessage =
+                msg.sender_type === ConversationMessageSenderType.AGENT &&
+                msg.sender_user_id === currentUserId.value
+            if (isOwnAgentMessage) {
+                return
+            }
+            const conversationIndex = conversations.value.findIndex(
+                (conversation) => conversation.id === payload.conversation_id
+            )
+            if (conversationIndex < 0) {
+                return
+            }
+            const conversation = conversations.value[conversationIndex]
+            const newMessage: MonitorMessage = {
+                id: String(msg.id),
+                sender: msg.sender_type as MonitorMessage['sender'],
+                message_type: msg.message_type as MonitorMessage['message_type'],
+                content: msg.message_text ?? '',
+                created_at: msg.created_at,
+            }
+            if (conversation.messages.some((message) => message.id === newMessage.id)) {
+                return
+            }
+            const updatedConversations = [...conversations.value]
+            updatedConversations[conversationIndex] = {
+                ...updatedConversations[conversationIndex],
+                messages: [...updatedConversations[conversationIndex].messages, newMessage],
+            }
+            conversations.value = updatedConversations
+        }
+    )
+    conversationChannelSubscribedId = conversationId
+}
+
+function unsubscribeFromConversationChannel(): void {
+    if (conversationChannelSubscribedId !== null) {
+        window.Echo.leave(`conversation.${conversationChannelSubscribedId}`)
+        conversationChannelSubscribedId = null
+    }
+}
+
 const waitingAgentConversations = computed(() =>
     conversations.value
         .filter(
@@ -329,7 +463,11 @@ const waitingAgentConversations = computed(() =>
                 item.status === ConversationStatus.WAITING_HUMAN ||
                 (item.status === ConversationStatus.ASSIGNED && isAssignedToCurrentUser(item))
         )
-        .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime())
+        .sort(
+            (conversationA, conversationB) =>
+                new Date(conversationA.startedAt).getTime() -
+                new Date(conversationB.startedAt).getTime()
+        )
 )
 
 const currentUserId = computed(() => auth.state.user?.id ?? null)
@@ -351,18 +489,29 @@ const activeConversations = computed(() =>
     conversations.value
         .filter(
             (item) => {
+                const isSelectedAndAnsweredByMe =
+                    item.id === selectedConversationId.value &&
+                    item.status === ConversationStatus.ASSIGNED &&
+                    isAssignedToCurrentUser(item)
+                if (isSelectedAndAnsweredByMe) {
+                    return false
+                }
                 if (item.status === ConversationStatus.OPEN) {
                     return true
                 }
 
                 if (item.status === ConversationStatus.ASSIGNED) {
-                    return canViewAssignedConversation(item) && !isAssignedToCurrentUser(item)
+                    return canViewAssignedConversation(item)
                 }
 
                 return false
             }
         )
-        .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+        .sort(
+            (conversationA, conversationB) =>
+                new Date(conversationB.startedAt).getTime() -
+                new Date(conversationA.startedAt).getTime()
+        )
 )
 
 const activeListTotalPages = computed(() =>
@@ -384,29 +533,24 @@ function updateResponsiveState(): void {
     isCompact.value = window.innerWidth <= MOBILE_BREAKPOINT_PX
 }
 
-function answerWaitingConversation(conversationId: number): void {
+async function answerWaitingConversation(conversationId: number): Promise<void> {
     const conversation = conversations.value.find((item) => item.id === conversationId)
-    if (!conversation) {
+    if (!conversation || conversation.status !== ConversationStatus.WAITING_HUMAN) {
         return
     }
 
-    if (conversation.status === ConversationStatus.WAITING_HUMAN) {
-        conversation.status = ConversationStatus.ASSIGNED
-        conversation.activeSinceAt = new Date().toISOString()
-        conversation.assignedToUserId = currentUserId.value
-        conversation.messages.push({
-            id: `${conversation.id}-accepted-${Date.now()}`,
-            sender: ConversationMessageSenderType.SYSTEM,
-            message_type: ConversationMessageType.SYSTEM_NOTICE,
-            content: 'System: Agent accepted this conversation.',
-            created_at: new Date().toISOString(),
-        })
+    try {
+        const data = await postAgentMonitorAnswerUserChatHistoryRequest(conversationId)
+        const messages = data.messages.map(historyMessageToMonitorMessage)
+        setConversationMessages(conversationId, messages)
+    } catch {
+        return
     }
 
-    openConversation(conversationId)
+    selectedConversationId.value = conversationId
 }
 
-function openConversation(conversationId: number): void {
+async function openConversation(conversationId: number): Promise<void> {
     const targetConversation = conversations.value.find((item) => item.id === conversationId)
     if (!targetConversation) {
         return
@@ -423,6 +567,13 @@ function openConversation(conversationId: number): void {
         finalizeConversationOnLeave(selectedConversationId.value)
     }
 
+    try {
+        const data = await getAgentMonitorViewUserChatHistoryRequest(conversationId)
+        const messages = data.messages.map(historyMessageToMonitorMessage)
+        setConversationMessages(conversationId, messages)
+    } catch {
+    }
+
     selectedConversationId.value = conversationId
 }
 
@@ -433,7 +584,7 @@ function closeSelectedConversation(): void {
     selectedConversationId.value = null
 }
 
-function endAssignedConversation(): void {
+async function endAssignedConversation(): Promise<void> {
     if (
         !selectedConversation.value ||
         selectedConversation.value.status !== ConversationStatus.ASSIGNED ||
@@ -442,16 +593,22 @@ function endAssignedConversation(): void {
         return
     }
 
+    const conversationId = selectedConversation.value.id
+    try {
+        await postAgentMonitorCloseWaitingHumanRequest(conversationId)
+    } catch {
+    }
     selectedConversation.value.status = ConversationStatus.OPEN
     selectedConversation.value.activeSinceAt = null
     selectedConversation.value.assignedToUserId = null
     selectedConversation.value.messages.push({
-        id: `${selectedConversation.value.id}-end-${Date.now()}`,
+        id: `${conversationId}-end-${Date.now()}`,
         sender: ConversationMessageSenderType.SYSTEM,
         message_type: ConversationMessageType.SYSTEM_NOTICE,
         content: 'System: Agent communication finished. Returning to bot mode.',
         created_at: new Date().toISOString(),
     })
+    selectedConversationId.value = null
 }
 
 function finalizeConversationOnLeave(conversationId: number): void {
@@ -464,7 +621,7 @@ function finalizeConversationOnLeave(conversationId: number): void {
         if (!canManageAssignedConversation(conversation)) {
             return
         }
-
+        postAgentMonitorCloseAssignedRequest(conversationId).catch(() => {})
         conversation.status = ConversationStatus.WAITING_HUMAN
         conversation.activeSinceAt = null
         conversation.assignedToUserId = null
@@ -498,7 +655,7 @@ function chatSubtitle(conversation: MonitorConversation): string {
     return t('agentMonitor.statusClosed')
 }
 
-function sendAgentMessage(content: string): void {
+async function sendAgentMessage(content: string): Promise<void> {
     if (
         !selectedConversation.value ||
         selectedConversation.value.status !== ConversationStatus.ASSIGNED ||
@@ -507,13 +664,32 @@ function sendAgentMessage(content: string): void {
         return
     }
 
+    const conversationId = selectedConversation.value.id
+    const tempId = `${conversationId}-${Date.now()}`
     selectedConversation.value.messages.push({
-        id: `${selectedConversation.value.id}-${Date.now()}`,
+        id: tempId,
         sender: ConversationMessageSenderType.AGENT,
         message_type: ConversationMessageType.AGENT_ANSWER,
         content,
         created_at: new Date().toISOString(),
     })
+    try {
+        await postAgentMonitorSendAgentMessageRequest(conversationId, content)
+    } catch {
+        const conversationIndex = conversations.value.findIndex(
+            (conversation) => conversation.id === conversationId
+        )
+        if (conversationIndex >= 0) {
+            const updatedConversations = [...conversations.value]
+            updatedConversations[conversationIndex] = {
+                ...updatedConversations[conversationIndex],
+                messages: updatedConversations[conversationIndex].messages.filter(
+                    (message) => message.id !== tempId
+                ),
+            }
+            conversations.value = updatedConversations
+        }
+    }
 }
 
 function formatElapsed(startedAt: string): string {
@@ -575,7 +751,12 @@ function playIncomingCallTone(): void {
     }
 }
 
-onMounted(() => {
+onMounted(async () => {
+    const canAccess = await fetchAdminOrHelpdeskAgentEligibility()
+    if (!canAccess) {
+        await router.replace({ name: ROUTE_NAMES.HOME })
+        return
+    }
     updateResponsiveState()
     window.addEventListener('resize', updateResponsiveState)
     void loadConversations()
@@ -585,7 +766,29 @@ onMounted(() => {
     }, 1000)
 })
 
+watch(selectedConversationId, (conversationId) => {
+    if (conversationId !== null) {
+        subscribeToConversationChannel(conversationId)
+    } else {
+        unsubscribeFromConversationChannel()
+    }
+})
+
 onBeforeUnmount(() => {
+    const selectedId = selectedConversationId.value
+    if (selectedId !== null) {
+        const conversation = conversations.value.find(
+            (item) => item.id === selectedId
+        )
+        if (
+            conversation &&
+            conversation.status === ConversationStatus.ASSIGNED &&
+            canManageAssignedConversation(conversation)
+        ) {
+            postAgentMonitorCloseAssignedRequest(selectedId).catch(() => {})
+        }
+    }
+    unsubscribeFromConversationChannel()
     window.removeEventListener('resize', updateResponsiveState)
     unsubscribeAgentMonitorChannel()
     document.body.style.overflow = ''

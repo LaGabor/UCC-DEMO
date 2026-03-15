@@ -21,11 +21,20 @@
                     <div class="chat-logo rounded-circle d-flex align-items-center justify-content-center">
                         <i class="bi bi-robot text-white" />
                     </div>
-                    <div>
-                        <h2 class="chat-title mb-0">{{ t('chat.title') }}</h2>
-                        <small class="text-white-50">
-                            {{ t(connectionTarget === 'bot' ? 'chat.connectedToBot' : 'chat.connectedToAgent') }}
-                        </small>
+                    <div class="d-flex align-items-center gap-2">
+                        <div>
+                            <h2 class="chat-title mb-0">{{ t('chat.title') }}</h2>
+                            <small class="text-white-50">
+                                {{ chatSubtitle }}
+                            </small>
+                        </div>
+                        <span
+                            v-if="showAgentStatusDot"
+                            class="chat-status-dot"
+                            :class="conversationStatus === ConversationStatus.ASSIGNED ? 'chat-status-dot--green' : 'chat-status-dot--red'"
+                            :title="chatSubtitle"
+                            aria-hidden="true"
+                        />
                     </div>
                 </div>
 
@@ -47,6 +56,8 @@
                     <button
                         type="button"
                         class="btn btn-sm btn-outline-light"
+                        :disabled="speechRecognition.isListening.value"
+                        :aria-label="t('chat.closeChat')"
                         @click="closeChat"
                     >
                         <i class="bi bi-chevron-down" />
@@ -54,16 +65,17 @@
                 </div>
             </header>
 
-            <div ref="messagesContainer" class="chat-panel__messages">
-                <div
-                    v-for="message in orderedMessages"
+            <div class="chat-panel__messages-wrapper">
+                <div ref="messagesContainer" class="chat-panel__messages">
+                    <div
+                        v-for="message in orderedMessages"
                     :key="message.id"
                     class="message-row"
                     :class="messageRowClass(message)"
                 >
                     <div class="message-bubble" :class="messageBubbleClass(message)">
                         <div class="message-meta">
-                            <span class="message-sender">{{ senderLabel(message.sender_type) }}</span>
+                            <span class="message-sender">{{ senderLabel(message) }}</span>
                             <span class="message-dot">-</span>
                             <span>{{ formatDateTime(message.created_at) }}</span>
                         </div>
@@ -71,25 +83,56 @@
                     </div>
                 </div>
             </div>
+                <div
+                    v-if="speechRecognition.isListening.value"
+                    class="chat-panel__messages-overlay"
+                    aria-hidden="true"
+                    role="button"
+                    :aria-label="t('chat.stopRecording')"
+                    tabindex="0"
+                    @click.stop="stopSpeechInput"
+                    @keydown.enter.space.prevent="stopSpeechInput"
+                >
+                    <i class="bi bi-mic-fill chat-panel__listening-icon" />
+                </div>
+            </div>
 
             <form class="chat-panel__form" @submit.prevent="submitMessage">
-                <div class="position-relative">
+                <div class="position-relative chat-input-wrapper">
                     <input
-                        v-model="draftMessage"
+                        ref="chatInputRef"
+                        :value="displayedDraft"
                         type="text"
-                        class="form-control pe-5"
+                        class="form-control chat-input-with-actions"
                         :placeholder="t('chat.inputPlaceholder')"
                         :disabled="waitingForBotResponse || isWaitingForAgent"
                         autocomplete="off"
-                        @input="onInputActivity"
+                        @input="onDraftInput"
                         @focus="onInputFocus"
                     />
-                    <span
-                        v-if="waitingForBotResponse"
-                        class="position-absolute top-50 end-0 translate-middle-y me-3 text-primary chat-loading-spinner"
-                        role="status"
-                        aria-hidden="true"
-                    />
+                    <div
+                        class="position-absolute top-50 end-0 translate-middle-y chat-input-actions d-flex align-items-center gap-1 pe-2"
+                        @click="chatInputRef?.focus()"
+                    >
+                        <span
+                            v-if="waitingForBotResponse"
+                            class="text-primary chat-loading-spinner"
+                            role="status"
+                            aria-hidden="true"
+                        />
+                        <button
+                            v-if="speechRecognition.isSupported"
+                            type="button"
+                            class="btn btn-link btn-sm p-1 text-secondary chat-mic-btn"
+                            :class="{ 'chat-mic-btn--active': speechRecognition.isListening.value }"
+                            :disabled="waitingForBotResponse || isWaitingForAgent"
+                            :title="t('chat.speechToText')"
+                            :aria-label="t('chat.speechToText')"
+                            @click.stop.prevent="toggleSpeechInput"
+                        >
+                            <i class="bi" :class="speechRecognition.isListening.value ? 'bi-mic-mute-fill' : 'bi-mic-fill'" />
+                        </button>
+                    </div>
                 </div>
                 <button
                     type="submit"
@@ -106,9 +149,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useSpeechRecognition } from '../composables/useSpeechRecognition'
 import {
     callAgentRequest,
     cancelCallRequest,
+    closeUserCommunicationRequest,
     getUserConversationRequest,
     sendUserMessageRequest,
 } from '../api/communication'
@@ -122,6 +167,8 @@ const MOBILE_BREAKPOINT_PX = 900
 const SEND_THROTTLE_MS = 1000
 const INACTIVITY_DISCONNECT_MS = 150_000
 const BOT_RESPONSE_TIMEOUT_MS = 30_000
+
+const OLLAMA_UNAVAILABLE_FALLBACK_TEXT = 'The assistant is temporarily unavailable. Please try again later.'
 
 const { t } = useI18n()
 
@@ -141,18 +188,83 @@ const lastSentAtMs = ref(0)
 const subscribedConversationId = ref<number | null>(null)
 const loadingTimeoutHandle = ref<number | null>(null)
 const inactivityTimeoutHandle = ref<number | null>(null)
+const chatInputRef = ref<HTMLInputElement | null>(null)
+const interimTranscript = ref('')
+
+const speechRecognition = useSpeechRecognition({
+    onFinalTranscript(text) {
+        const trimmed = text.trim()
+        if (!trimmed) return
+        draftMessage.value = draftMessage.value ? `${draftMessage.value} ${trimmed}` : trimmed
+        interimTranscript.value = ''
+    },
+    onInterimTranscript(text) {
+        interimTranscript.value = text
+    },
+})
+
+const displayedDraft = computed(
+    () =>
+        draftMessage.value +
+        (interimTranscript.value ? ` ${interimTranscript.value}` : '')
+)
+
+function onDraftInput(event: Event): void {
+    const target = event.target as HTMLInputElement
+    draftMessage.value = target.value
+    interimTranscript.value = ''
+    onInputActivity()
+}
+
+function toggleSpeechInput(): void {
+    if (waitingForBotResponse.value || isWaitingForAgent.value) return
+    speechRecognition.toggle()
+}
+
+function stopSpeechInput(): void {
+    if (!speechRecognition.isListening.value) return
+    speechRecognition.stop()
+    flushInterimToDraft()
+}
+
+function flushInterimToDraft(): void {
+    if (interimTranscript.value) {
+        draftMessage.value = (
+            draftMessage.value +
+            (draftMessage.value ? ' ' : '') +
+            interimTranscript.value
+        ).trim()
+        interimTranscript.value = ''
+    }
+}
 
 const orderedMessages = computed(() =>
     [...messageFeed.value].sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        (messageA, messageB) =>
+            new Date(messageA.created_at).getTime() -
+            new Date(messageB.created_at).getTime()
     )
 )
 
 const canSubmit = computed(
-    () => draftMessage.value.trim().length > 0 && !actionLoading.value
+    () => displayedDraft.value.trim().length > 0 && !actionLoading.value
 )
 const isWaitingForAgent = computed(
     () => conversationStatus.value === ConversationStatus.WAITING_HUMAN
+)
+const chatSubtitle = computed(() => {
+    if (conversationStatus.value === ConversationStatus.WAITING_HUMAN) {
+        return t('chat.waitingForAgent')
+    }
+    if (conversationStatus.value === ConversationStatus.ASSIGNED) {
+        return t('chat.connectedToAgent')
+    }
+    return connectionTarget.value === 'bot' ? t('chat.connectedToBot') : t('chat.connectedToAgent')
+})
+const showAgentStatusDot = computed(
+    () =>
+        conversationStatus.value === ConversationStatus.WAITING_HUMAN ||
+        conversationStatus.value === ConversationStatus.ASSIGNED
 )
 
 function updateScreenState(): void {
@@ -194,7 +306,7 @@ async function toggleConnectionTarget(): Promise<void> {
 }
 
 async function submitMessage(): Promise<void> {
-    const content = draftMessage.value.trim()
+    const content = displayedDraft.value.trim()
     if (!content || waitingForBotResponse.value || actionLoading.value) {
         return
     }
@@ -210,40 +322,33 @@ async function submitMessage(): Promise<void> {
     const localMessageText = content
 
     try {
-        const ack = await sendUserMessageRequest({
+        const acknowledgment = await sendUserMessageRequest({
             conversation_id: conversationId.value,
             conversation_status: conversationStatus.value,
             message_text: content,
         })
         draftMessage.value = ''
-        const previousConversationId = conversationId.value
-        conversationId.value = ack.conversation_id
-        conversationStatus.value = ack.status
+        interimTranscript.value = ''
+        conversationId.value = acknowledgment.conversation_id
+        conversationStatus.value = acknowledgment.status
         connectionTarget.value =
             conversationStatus.value === ConversationStatus.WAITING_HUMAN ||
             conversationStatus.value === ConversationStatus.ASSIGNED
                 ? 'agent'
                 : 'bot'
 
-        if (
-            previousConversationId === null ||
-            subscribedConversationId.value !== ack.conversation_id
-        ) {
-            appendLocalUserMessage(localMessageText)
-        }
+        appendLocalUserMessage(localMessageText)
 
         if (conversationStatus.value === ConversationStatus.OPEN) {
-            const lastMessage = messageFeed.value[messageFeed.value.length - 1]
-            const lastIsBotReply =
-                lastMessage &&
-                (lastMessage.sender_type === ConversationMessageSenderType.BOT ||
-                    lastMessage.sender_type === ConversationMessageSenderType.AGENT ||
-                    lastMessage.sender_type === ConversationMessageSenderType.SYSTEM)
-            if (!lastIsBotReply) {
-                waitingForBotResponse.value = true
-                startBotResponseTimeout()
-            }
+            waitingForBotResponse.value = true
+            startBotResponseTimeout()
             stopInactivityDisconnectTimer()
+        }
+
+        try {
+            const conversationPayload = await getUserConversationRequest()
+            hydrateConversation(conversationPayload)
+        } catch {
         }
     } catch (error) {
         pushSystemMessage(getApiErrorMessage(t, error, 'errors.unexpected'))
@@ -253,9 +358,9 @@ async function submitMessage(): Promise<void> {
 }
 
 function appendLocalUserMessage(messageText: string): void {
-    const fallbackId = Math.floor(Math.random() * 1_000_000_000)
+    const optimisticId = -Date.now()
     messageFeed.value.push({
-        id: fallbackId,
+        id: optimisticId,
         sender_type: ConversationMessageSenderType.USER,
         message_type: ConversationMessageType.QUESTION,
         message_text: messageText,
@@ -264,8 +369,18 @@ function appendLocalUserMessage(messageText: string): void {
     })
 }
 
-function senderLabel(sender: ConversationMessageSenderType): string {
-    switch (sender) {
+function shouldDisplayAsSystemMessage(message: ConversationMessageItem): boolean {
+    return (
+        message.sender_type === ConversationMessageSenderType.BOT &&
+        message.message_text === OLLAMA_UNAVAILABLE_FALLBACK_TEXT
+    )
+}
+
+function senderLabel(message: ConversationMessageItem): string {
+    if (shouldDisplayAsSystemMessage(message)) {
+        return t('chat.senderSystem')
+    }
+    switch (message.sender_type) {
         case ConversationMessageSenderType.USER:
             return t('chat.senderUser')
         case ConversationMessageSenderType.BOT:
@@ -290,6 +405,9 @@ function formatDateTime(value: string): string {
 }
 
 function messageRowClass(message: ConversationMessageItem): string {
+    if (shouldDisplayAsSystemMessage(message)) {
+        return 'message-row--center'
+    }
     if (
         message.message_type === ConversationMessageType.SYSTEM_NOTICE ||
         message.message_type === ConversationMessageType.SYSTEM_ERROR
@@ -305,6 +423,9 @@ function messageRowClass(message: ConversationMessageItem): string {
 }
 
 function messageBubbleClass(message: ConversationMessageItem): string {
+    if (shouldDisplayAsSystemMessage(message)) {
+        return 'message-bubble--system'
+    }
     switch (message.message_type) {
         case ConversationMessageType.QUESTION:
             return 'message-bubble--question'
@@ -350,6 +471,16 @@ function hydrateConversation(payload: {
     if (conversationStatus.value !== ConversationStatus.OPEN) {
         waitingForBotResponse.value = false
         clearBotResponseTimeout()
+    } else if (payload.messages.length > 0) {
+        const lastMessage = payload.messages[payload.messages.length - 1]
+        const lastIsFromBotOrSystem =
+            lastMessage.sender_type === ConversationMessageSenderType.BOT ||
+            lastMessage.sender_type === ConversationMessageSenderType.AGENT ||
+            lastMessage.sender_type === ConversationMessageSenderType.SYSTEM
+        if (lastIsFromBotOrSystem) {
+            waitingForBotResponse.value = false
+            clearBotResponseTimeout()
+        }
     }
 }
 
@@ -382,36 +513,69 @@ async function connectToConversationChannel(): Promise<void> {
     disconnectConversationChannel()
 
     const channelName = `conversation.${conversationId.value}`
-    window.Echo.private(channelName).listen(
-        '.conversation.message.created',
-        (payload: ConversationMessageBroadcastPayload) => {
-            if (payload.conversation_id !== conversationId.value) {
-                return
-            }
 
-            conversationStatus.value = payload.status
-            connectionTarget.value =
-                payload.status === ConversationStatus.WAITING_HUMAN ||
-                payload.status === ConversationStatus.ASSIGNED
-                    ? 'agent'
-                    : 'bot'
-
-            if (!messageFeed.value.some((message) => message.id === payload.message.id)) {
-                messageFeed.value.push(payload.message)
-            }
-
-            if (
-                payload.message.sender_type === ConversationMessageSenderType.BOT ||
-                payload.message.sender_type === ConversationMessageSenderType.AGENT ||
-                payload.message.sender_type === ConversationMessageSenderType.SYSTEM
-            ) {
-                waitingForBotResponse.value = false
-                clearBotResponseTimeout()
-            }
-
-            resetInactivityDisconnectTimer()
+    function handleStatusChanged(payload: unknown): void {
+        const raw = payload as Record<string, unknown>
+        const data = (raw?.data ?? raw) as { conversation_id?: number; status?: string } | undefined
+        if (!data || typeof data.conversation_id !== 'number' || data.conversation_id !== conversationId.value) {
+            return
         }
-    )
+        const status = data.status as ConversationStatus | undefined
+        if (!status) {
+            return
+        }
+        conversationStatus.value = status
+        connectionTarget.value =
+            status === ConversationStatus.WAITING_HUMAN || status === ConversationStatus.ASSIGNED
+                ? 'agent'
+                : 'bot'
+        resetInactivityDisconnectTimer()
+    }
+
+    window.Echo.private(channelName)
+        .listen('.conversation.status.changed', handleStatusChanged)
+        .listen(
+            '.conversation.message.created',
+            (payload: ConversationMessageBroadcastPayload) => {
+                if (payload.conversation_id !== conversationId.value) {
+                    return
+                }
+
+                conversationStatus.value = payload.status
+                connectionTarget.value =
+                    payload.status === ConversationStatus.WAITING_HUMAN ||
+                    payload.status === ConversationStatus.ASSIGNED
+                        ? 'agent'
+                        : 'bot'
+
+                if (payload.message.sender_type === ConversationMessageSenderType.USER) {
+                    const optimisticIndex = messageFeed.value.findIndex(
+                        (message) =>
+                            message.id < 0 && message.message_text === payload.message.message_text
+                    )
+                    if (optimisticIndex >= 0) {
+                        messageFeed.value = messageFeed.value.map((message, index) =>
+                            index === optimisticIndex ? payload.message : message
+                        )
+                    } else {
+                        messageFeed.value.push(payload.message)
+                    }
+                } else if (!messageFeed.value.some((message) => message.id === payload.message.id)) {
+                    messageFeed.value.push(payload.message)
+                }
+
+                if (
+                    payload.message.sender_type === ConversationMessageSenderType.BOT ||
+                    payload.message.sender_type === ConversationMessageSenderType.AGENT ||
+                    payload.message.sender_type === ConversationMessageSenderType.SYSTEM
+                ) {
+                    waitingForBotResponse.value = false
+                    clearBotResponseTimeout()
+                }
+
+                resetInactivityDisconnectTimer()
+            }
+        )
 
     subscribedConversationId.value = conversationId.value
 }
@@ -425,6 +589,14 @@ function disconnectConversationChannel(): void {
     subscribedConversationId.value = null
 }
 
+async function closeCurrentConversationAndDisconnect(): Promise<void> {
+    const idToClose = conversationId.value ?? subscribedConversationId.value
+    if (idToClose !== null) {
+        closeUserCommunicationRequest({ conversation_id: idToClose }).catch(() => {})
+    }
+    disconnectConversationChannel()
+}
+
 function resetInactivityDisconnectTimer(): void {
     stopInactivityDisconnectTimer()
 
@@ -433,7 +605,7 @@ function resetInactivityDisconnectTimer(): void {
     }
 
     inactivityTimeoutHandle.value = window.setTimeout(() => {
-        disconnectConversationChannel()
+        void closeCurrentConversationAndDisconnect()
     }, INACTIVITY_DISCONNECT_MS)
 }
 
@@ -476,8 +648,11 @@ watch(
     }
 )
 
-watch(isOpen, async (open) => {
-    if (!open) {
+watch(isOpen, async (isWidgetOpen) => {
+    if (isWidgetOpen && conversationId.value) {
+        void connectToConversationChannel()
+    }
+    if (!isWidgetOpen) {
         return
     }
 
@@ -497,6 +672,19 @@ watch(isOpen, async (open) => {
     }
 })
 
+watch(conversationId, (currentConversationId) => {
+    if (currentConversationId && isOpen.value) {
+        void connectToConversationChannel()
+    }
+})
+
+watch(
+    () => speechRecognition.isListening.value,
+    (isListening, wasListening) => {
+        if (wasListening && !isListening) flushInterimToDraft()
+    }
+)
+
 onMounted(() => {
     updateScreenState()
     window.addEventListener('resize', updateScreenState)
@@ -504,9 +692,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+    speechRecognition.stop()
     stopInactivityDisconnectTimer()
     clearBotResponseTimeout()
-    disconnectConversationChannel()
+    void closeCurrentConversationAndDisconnect()
     window.removeEventListener('resize', updateScreenState)
 })
 </script>
@@ -581,14 +770,41 @@ onBeforeUnmount(() => {
     font-weight: 700;
 }
 
+.chat-panel__messages-wrapper {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
 .chat-panel__messages {
     background: #f7f8fc;
     overflow-y: auto;
     flex: 1 1 auto;
+    min-height: 0;
     padding: 0.95rem;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
+}
+
+.chat-panel__messages-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    cursor: pointer;
+}
+
+.chat-panel__listening-icon {
+    font-size: 3.5rem;
+    color: #0d6efd;
+    opacity: 1;
 }
 
 .message-row {
@@ -660,6 +876,40 @@ onBeforeUnmount(() => {
     gap: 0.55rem;
 }
 
+.chat-input-wrapper {
+    position: relative;
+}
+
+.chat-input-with-actions {
+    padding-right: 4.5rem;
+}
+
+.chat-input-actions {
+    z-index: 2;
+    cursor: text;
+}
+
+.chat-input-actions .chat-mic-btn {
+    cursor: pointer;
+}
+
+.chat-mic-btn {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.chat-mic-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.chat-mic-btn--active {
+    color: var(--bs-primary) !important;
+}
+
 .chat-loading-spinner {
     display: inline-flex;
     width: 0.9rem;
@@ -680,5 +930,20 @@ onBeforeUnmount(() => {
     to {
         transform: rotate(360deg);
     }
+}
+
+.chat-status-dot {
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+}
+
+.chat-status-dot--red {
+    background-color: #ff4444;
+}
+
+.chat-status-dot--green {
+    background-color: #22c55e;
 }
 </style>

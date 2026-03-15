@@ -1,5 +1,9 @@
-import { apiClient } from './client'
-import type { UserConversationPayload, UserMessageAcceptedPayload } from '../types/communication'
+import { apiClient, getXsrfTokenFromCookie } from './client'
+import type {
+    CloseUserCommunicationPayload,
+    UserConversationPayload,
+    UserMessageAcceptedPayload,
+} from '../types/communication'
 import type { ConversationStatus } from '../types/enums'
 
 type SuccessResponse<T> = {
@@ -49,4 +53,38 @@ export async function cancelCallRequest(payload: {
     )
 
     return response.data.data
+}
+
+const CLOSE_USER_COMMUNICATION_PATH = '/api/communication/close-user-communication'
+
+export async function closeUserCommunicationRequest(payload: {
+    conversation_id: number | null
+}): Promise<CloseUserCommunicationPayload> {
+    const response = await apiClient.patch<SuccessResponse<CloseUserCommunicationPayload>>(
+        CLOSE_USER_COMMUNICATION_PATH,
+        payload
+    )
+
+    return response.data.data
+}
+
+export function closeUserCommunicationBeacon(payload: { conversation_id: number | null }): void {
+    const token = getXsrfTokenFromCookie()
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+    }
+    if (token) {
+        headers['X-XSRF-TOKEN'] = token
+    }
+    window
+        .fetch(CLOSE_USER_COMMUNICATION_PATH, {
+            method: 'PATCH',
+            credentials: 'include',
+            keepalive: true,
+            headers,
+            body: JSON.stringify(payload),
+        })
+        .catch(() => {})
 }

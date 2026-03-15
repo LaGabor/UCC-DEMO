@@ -8,6 +8,20 @@ use App\Enums\Language;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property int $id
+ * @property int $conversation_id
+ * @property ConversationMessageSenderType $sender_type
+ * @property int|null $sender_user_id
+ * @property ConversationMessageType $message_type
+ * @property Language|null $language
+ * @property string|null $message_text
+ * @property string|null $answer_code
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property-read Conversation $conversation
+ * @property-read User|null $senderUser
+ */
 class ConversationMessage extends Model
 {
     protected $fillable = [

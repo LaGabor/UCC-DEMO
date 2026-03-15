@@ -369,7 +369,7 @@ const visiblePages = computed(() => {
 })
 
 const pageOptions = computed(() =>
-    Array.from({ length: meta.last_page }, (_, idx) => idx + 1)
+    Array.from({ length: meta.last_page }, (_, pageIndex) => pageIndex + 1)
 )
 
 async function removeEvent(eventId: number): Promise<void> {

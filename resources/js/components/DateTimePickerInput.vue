@@ -49,8 +49,8 @@ function initializePicker(): void {
         disableMobile: true,
         minDate: props.min,
         defaultDate: props.modelValue || undefined,
-        onChange: (_, dateStr) => {
-            emit('update:modelValue', dateStr)
+        onChange: (_selectedDates, formattedDateString) => {
+            emit('update:modelValue', formattedDateString)
         },
     })
 }

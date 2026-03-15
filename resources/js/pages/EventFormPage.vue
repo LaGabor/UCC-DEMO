@@ -67,7 +67,8 @@
                             {{ deleting ? t('events.deleting') : t('events.deleteButton') }}
                         </button>
                         <button type="submit" class="btn btn-primary" :disabled="loading">
-                            {{ loading ? t('events.saving') : t('events.saveButton') }}
+                            <span v-if="isEditMode">{{ loading ? t('events.editing') : t('events.editButton') }}</span>
+                            <span v-else>{{ loading ? t('events.saving') : t('events.saveButton') }}</span>
                         </button>
                     </div>
                 </form>
@@ -84,8 +85,14 @@ import DateTimePickerInput from '../components/DateTimePickerInput.vue'
 import { createEvent, deleteEvent, getEvent, updateEvent } from '../api/events'
 import { ROUTE_NAMES } from '../router'
 import { getApiErrorMessage } from '../utils/apiErrorMessage'
+import type { EventItem } from '../types/events'
 
 type AlertType = 'success' | 'error'
+
+const props = withDefaults(
+    defineProps<{ initialEvent?: EventItem | null }>(),
+    { initialEvent: null }
+)
 
 const route = useRoute()
 const router = useRouter()
@@ -128,6 +135,12 @@ function toDateTimeLocalValue(date: Date): string {
     return localDate.toISOString().slice(0, 16)
 }
 
+function applyEventToForm(event: EventItem): void {
+    form.title = event.title
+    form.description = event.description ?? ''
+    form.occurs_at = toDateTimeLocalValue(new Date(event.occurs_at))
+}
+
 function validate(): boolean {
     if (isEditMode.value) {
         fieldErrors.title = ''
@@ -165,18 +178,16 @@ function extractFieldErrors(error: unknown): void {
 }
 
 async function loadEventForEdit(): Promise<void> {
-    if (!isEditMode.value) {
+    if (!isEditMode.value) return
+    if (props.initialEvent) {
+        applyEventToForm(props.initialEvent)
         return
     }
-
     loading.value = true
     clearAlert()
-
     try {
         const event = await getEvent(eventId.value)
-        form.title = event.title
-        form.description = event.description ?? ''
-        form.occurs_at = toDateTimeLocalValue(new Date(event.occurs_at))
+        applyEventToForm(event)
     } catch (error) {
         setAlert('error', getApiErrorMessage(t, error, 'events.fetchFailed'))
     } finally {

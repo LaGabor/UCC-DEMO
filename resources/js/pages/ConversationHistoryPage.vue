@@ -6,13 +6,13 @@
         </div>
 
         <div
-            class="history-grid"
+            class="history-wrapper"
             :class="{
-                'history-grid--stacked': isCompact,
-                'history-grid--list-only': !selectedConversation || (isCompact && !selectedConversation),
+                'history-wrapper--split': selectedConversationId,
+                'history-wrapper--split-compact': selectedConversationId && isCompact,
             }"
         >
-            <section class="history-list" v-if="!isCompact || !selectedConversation">
+            <section class="history-list">
                 <div class="card shadow-sm border-0 h-100">
                     <div class="card-body p-0 d-flex flex-column h-100">
                         <div class="table-responsive flex-grow-1">
@@ -26,53 +26,39 @@
                                             </button>
                                         </th>
                                         <th>
-                                            <button class="table-sort-btn" @click="setSort('startedAt')">
-                                                {{ t('conversationHistory.columns.startedAt') }}
-                                                <i :class="sortIconClass('startedAt')"></i>
+                                            <button class="table-sort-btn" @click="setSort('last_message_at')">
+                                                {{ t('conversationHistory.columns.lastMessageAt') }}
+                                                <i :class="sortIconClass('last_message_at')"></i>
                                             </button>
                                         </th>
-                                        <th>
-                                            <button class="table-sort-btn" @click="setSort('agentCalledAt')">
-                                                {{ t('conversationHistory.columns.agentCalledAt') }}
-                                                <i :class="sortIconClass('agentCalledAt')"></i>
-                                            </button>
-                                        </th>
-                                        <th>
-                                            <button class="table-sort-btn" @click="setSort('agentAnsweredAt')">
-                                                {{ t('conversationHistory.columns.agentAnsweredAt') }}
-                                                <i :class="sortIconClass('agentAnsweredAt')"></i>
-                                            </button>
-                                        </th>
-                                        <th>
-                                            <button class="table-sort-btn" @click="setSort('finishedAt')">
-                                                {{ t('conversationHistory.columns.finishedAt') }}
-                                                <i :class="sortIconClass('finishedAt')"></i>
-                                            </button>
-                                        </th>
+                                        <th>{{ t('conversationHistory.columns.lastMessage') }}</th>
                                         <th class="text-end">{{ t('events.columns.operations') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="conversation in pagedConversations" :key="conversation.id">
-                                        <td>{{ conversation.requesterName }}</td>
-                                        <td>{{ formatDateTime(conversation.startedAt) }}</td>
-                                        <td>{{ formatNullableDate(conversation.agentCalledAt) }}</td>
-                                        <td>{{ formatNullableDate(conversation.agentAnsweredAt) }}</td>
-                                        <td>{{ formatDateTime(conversation.finishedAt) }}</td>
+                                    <tr v-if="listLoading">
+                                        <td colspan="4" class="text-center text-muted py-4">
+                                            {{ t('conversationHistory.loading') }}
+                                        </td>
+                                    </tr>
+                                    <tr v-else v-for="row in pagedRows" :key="row.conversation_id">
+                                        <td>{{ row.user_name }}</td>
+                                        <td>{{ formatDateTime(row.last_message_at) }}</td>
+                                        <td>{{ lastMessagePreview(row.last_message_text) }}</td>
                                         <td class="text-end">
                                             <button
                                                 type="button"
                                                 class="btn btn-outline-secondary btn-sm"
-                                                :disabled="selectedConversationId === conversation.id"
-                                                @click="openConversation(conversation.id)"
+                                                :disabled="selectedConversationId === row.conversation_id"
+                                                @click="openConversation(row.conversation_id)"
                                             >
                                                 <i class="bi bi-eye me-1" />
                                                 {{ t('agentMonitor.viewConversation') }}
                                             </button>
                                         </td>
                                     </tr>
-                                    <tr v-if="!pagedConversations.length">
-                                        <td colspan="6" class="text-center text-muted py-4">
+                                    <tr v-if="!listLoading && !pagedRows.length">
+                                        <td colspan="4" class="text-center text-muted py-4">
                                             {{ t('conversationHistory.empty') }}
                                         </td>
                                     </tr>
@@ -103,7 +89,7 @@
                             <div class="d-flex align-items-center gap-2">
                                 <label class="small text-muted mb-0">{{ t('events.pagination.goToPage') }}</label>
                                 <select v-model.number="page" class="form-select form-select-sm" style="width: 90px;">
-                                    <option v-for="p in totalPages" :key="p" :value="p">{{ p }}</option>
+                                    <option v-for="pageNumber in totalPages" :key="pageNumber" :value="pageNumber">{{ pageNumber }}</option>
                                 </select>
                             </div>
 
@@ -120,17 +106,16 @@
                 </div>
             </section>
 
-            <section
-                class="history-chat"
-                :class="{ 'history-chat--fullscreen': isCompact && selectedConversation }"
-                v-if="selectedConversation || !isCompact"
-            >
+            <section class="history-chat" v-if="selectedConversationId">
+                <div v-if="historyLoading" class="card shadow-sm border-0 h-100 d-flex align-items-center justify-content-center">
+                    <p class="text-muted mb-0">{{ t('conversationHistory.loading') }}</p>
+                </div>
                 <AdminChatWidget
-                    v-if="selectedConversation"
-                    :title="selectedConversation.requesterName"
+                    v-else
+                    :title="selectedRow?.user_name ?? ''"
                     :subtitle="t('agentMonitor.statusClosed')"
                     :input-placeholder="t('agentMonitor.chatInputPlaceholder')"
-                    :messages="selectedConversation.messages"
+                    :messages="activeHistoryMessages"
                     :input-disabled="true"
                     @close="closeConversation"
                 />
@@ -141,9 +126,16 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AdminChatWidget from '../components/AdminChatWidget.vue'
+import { fetchAdminOrHelpdeskAgentEligibility } from '../api/auth'
+import { getConversationHistoryListRequest, getConversationHistoryMessagesRequest } from '../api/conversationHistory'
+import { ROUTE_NAMES } from '../router'
+import type { ConversationHistoryListEntry } from '../types/communication'
 import { ConversationMessageSenderType, ConversationMessageType } from '../types/enums'
+
+const LAST_MESSAGE_PREVIEW_LENGTH = 20
 
 type HistoryMessage = {
     id: string
@@ -153,113 +145,64 @@ type HistoryMessage = {
     created_at: string
 }
 
-type HistoryConversation = {
-    id: number
-    requesterName: string
-    startedAt: string
-    agentCalledAt: string | null
-    agentAnsweredAt: string | null
-    finishedAt: string
-    messages: HistoryMessage[]
-}
-
-type SortField = 'name' | 'startedAt' | 'agentCalledAt' | 'agentAnsweredAt' | 'finishedAt'
+type SortField = 'name' | 'last_message_at'
 type SortDir = 'asc' | 'desc'
 
 const MOBILE_BREAKPOINT_PX = 970
+const router = useRouter()
 const { t } = useI18n()
 
 const isCompact = ref(false)
 const selectedConversationId = ref<number | null>(null)
 const page = ref(1)
 const perPage = ref(10)
-const sortBy = ref<SortField>('finishedAt')
+const sortBy = ref<SortField>('last_message_at')
 const sortDir = ref<SortDir>('desc')
 
-const conversations = ref<HistoryConversation[]>([
-    {
-        id: 8001,
-        requesterName: 'Bence Farkas',
-        startedAt: '2026-03-10T06:10:00Z',
-        agentCalledAt: '2026-03-10T06:11:00Z',
-        agentAnsweredAt: '2026-03-10T06:12:00Z',
-        finishedAt: '2026-03-10T06:18:00Z',
-        messages: [
-            {
-                id: '8001-1',
-                sender: ConversationMessageSenderType.USER,
-                message_type: ConversationMessageType.QUESTION,
-                content: 'I need help with invitation acceptance.',
-                created_at: '2026-03-10T06:10:00Z',
-            },
-            {
-                id: '8001-2',
-                sender: ConversationMessageSenderType.AGENT,
-                message_type: ConversationMessageType.AGENT_ANSWER,
-                content: 'I have resent your invitation link.',
-                created_at: '2026-03-10T06:12:00Z',
-            },
-        ],
-    },
-    {
-        id: 8002,
-        requesterName: 'Kata Simon',
-        startedAt: '2026-03-10T07:00:00Z',
-        agentCalledAt: null,
-        agentAnsweredAt: null,
-        finishedAt: '2026-03-10T07:05:00Z',
-        messages: [
-            {
-                id: '8002-1',
-                sender: ConversationMessageSenderType.USER,
-                message_type: ConversationMessageType.QUESTION,
-                content: 'How can I change language?',
-                created_at: '2026-03-10T07:00:00Z',
-            },
-            {
-                id: '8002-2',
-                sender: ConversationMessageSenderType.BOT,
-                message_type: ConversationMessageType.BOT_ANSWER,
-                content: 'Use the language selector in the top bar.',
-                created_at: '2026-03-10T07:00:20Z',
-            },
-        ],
-    },
-])
+const listLoading = ref(false)
+const historyLoading = ref(false)
+const listError = ref(false)
+const rows = ref<ConversationHistoryListEntry[]>([])
+const activeHistoryMessages = ref<HistoryMessage[]>([])
 
-const sortedConversations = computed(() => {
-    const list = [...conversations.value]
+const sortedRows = computed(() => {
+    const list = [...rows.value]
     const factor = sortDir.value === 'asc' ? 1 : -1
 
-    list.sort((a, b) => {
+    list.sort((rowA, rowB) => {
         if (sortBy.value === 'name') {
-            return a.requesterName.localeCompare(b.requesterName) * factor
+            return rowA.user_name.localeCompare(rowB.user_name) * factor
         }
-
-        const aValue = getSortTimestamp(a, sortBy.value)
-        const bValue = getSortTimestamp(b, sortBy.value)
-        return (aValue - bValue) * factor
+        const rowADateMs = rowA.last_message_at
+            ? new Date(rowA.last_message_at).getTime()
+            : 0
+        const rowBDateMs = rowB.last_message_at
+            ? new Date(rowB.last_message_at).getTime()
+            : 0
+        return (rowADateMs - rowBDateMs) * factor
     })
-
     return list
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(sortedConversations.value.length / perPage.value)))
+const totalPages = computed(() => Math.max(1, Math.ceil(sortedRows.value.length / perPage.value)))
 
-const pagedConversations = computed(() => {
+const pagedRows = computed(() => {
     const start = (page.value - 1) * perPage.value
-    return sortedConversations.value.slice(start, start + perPage.value)
+    return sortedRows.value.slice(start, start + perPage.value)
 })
 
-const selectedConversation = computed(
-    () => conversations.value.find((item) => item.id === selectedConversationId.value) ?? null
+const selectedRow = computed(
+    () =>
+        rows.value.find(
+            (row) => row.conversation_id === selectedConversationId.value
+        ) ?? null
 )
 
-watch([perPage, totalPages], () => {
-    if (page.value > totalPages.value) {
-        page.value = totalPages.value
-    }
-})
+function lastMessagePreview(text: string | null): string {
+    if (text == null || text === '') return '-'
+    if (text.length <= LAST_MESSAGE_PREVIEW_LENGTH) return text
+    return text.slice(0, LAST_MESSAGE_PREVIEW_LENGTH) + '...'
+}
 
 function setSort(field: SortField): void {
     if (sortBy.value === field) {
@@ -267,35 +210,71 @@ function setSort(field: SortField): void {
         return
     }
     sortBy.value = field
-    sortDir.value = 'asc'
+    sortDir.value = field === 'name' ? 'asc' : 'desc'
 }
 
 function sortIconClass(field: SortField): string {
-    if (sortBy.value !== field) {
-        return 'bi bi-arrow-down-up ms-1'
-    }
-
+    if (sortBy.value !== field) return 'bi bi-arrow-down-up ms-1'
     return sortDir.value === 'asc' ? 'bi bi-sort-up ms-1' : 'bi bi-sort-down ms-1'
 }
 
-function getSortTimestamp(item: HistoryConversation, field: SortField): number {
-    const value = field === 'startedAt'
-        ? item.startedAt
-        : field === 'agentCalledAt'
-            ? item.agentCalledAt
-            : field === 'agentAnsweredAt'
-                ? item.agentAnsweredAt
-                : item.finishedAt
-
-    return value ? new Date(value).getTime() : 0
+function formatDateTime(value: string | null): string {
+    if (!value) return '-'
+    const date = new Date(value)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hour = String(date.getHours()).padStart(2, '0')
+    const minute = String(date.getMinutes()).padStart(2, '0')
+    return `${year}. ${month}. ${day} ${hour}:${minute}`
 }
 
-function openConversation(id: number): void {
-    selectedConversationId.value = id
+function mapApiMessageToHistoryMessage(apiMessage: {
+    id: number
+    sender_type: string
+    message_type: string
+    message_text: string | null
+    created_at: string
+}): HistoryMessage {
+    return {
+        id: String(apiMessage.id),
+        sender: apiMessage.sender_type as ConversationMessageSenderType,
+        message_type: apiMessage.message_type as ConversationMessageType,
+        content: apiMessage.message_text ?? '',
+        created_at: apiMessage.created_at,
+    }
+}
+
+async function loadList(): Promise<void> {
+    listLoading.value = true
+    listError.value = false
+    try {
+        rows.value = await getConversationHistoryListRequest()
+    } catch {
+        listError.value = true
+        rows.value = []
+    } finally {
+        listLoading.value = false
+    }
+}
+
+async function openConversation(conversationId: number): void {
+    selectedConversationId.value = conversationId
+    activeHistoryMessages.value = []
+    historyLoading.value = true
+    try {
+        const data = await getConversationHistoryMessagesRequest(conversationId)
+        activeHistoryMessages.value = data.messages.map(mapApiMessageToHistoryMessage)
+    } catch {
+        activeHistoryMessages.value = []
+    } finally {
+        historyLoading.value = false
+    }
 }
 
 function closeConversation(): void {
     selectedConversationId.value = null
+    activeHistoryMessages.value = []
 }
 
 function goToPage(target: number): void {
@@ -306,23 +285,21 @@ function updateResponsiveState(): void {
     isCompact.value = window.innerWidth <= MOBILE_BREAKPOINT_PX
 }
 
-function formatDateTime(value: string): string {
-    const date = new Date(value)
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const hour = String(date.getHours()).padStart(2, '0')
-    const minute = String(date.getMinutes()).padStart(2, '0')
-    return `${year}. ${month}. ${day} ${hour}:${minute}`
-}
+watch([perPage, totalPages], () => {
+    if (page.value > totalPages.value) {
+        page.value = totalPages.value
+    }
+})
 
-function formatNullableDate(value: string | null): string {
-    return value ? formatDateTime(value) : '-'
-}
-
-onMounted(() => {
+onMounted(async () => {
+    const canAccess = await fetchAdminOrHelpdeskAgentEligibility()
+    if (!canAccess) {
+        await router.replace({ name: ROUTE_NAMES.HOME })
+        return
+    }
     updateResponsiveState()
     window.addEventListener('resize', updateResponsiveState)
+    loadList()
 })
 
 onBeforeUnmount(() => {
@@ -331,7 +308,7 @@ onBeforeUnmount(() => {
 })
 
 watch(
-    () => isCompact.value && !!selectedConversation.value,
+    () => isCompact.value && !!selectedConversationId.value,
     (fullscreen) => {
         document.body.style.overflow = fullscreen ? 'hidden' : ''
     }
@@ -339,30 +316,30 @@ watch(
 </script>
 
 <style scoped>
-.history-grid {
+.history-wrapper {
+    min-height: 400px;
+}
+
+.history-wrapper--split {
     display: grid;
-    grid-template-columns: minmax(560px, 1fr) minmax(420px, 1fr);
-    grid-template-areas: 'list chat';
+    grid-template-columns: 40% 60%;
     gap: 1rem;
-    height: max(650px, calc(100dvh - 220px));
+    height: max(500px, calc(100dvh - 220px));
 }
 
-.history-grid--list-only {
-    grid-template-columns: 1fr;
-    grid-template-areas: 'list';
-}
-
-.history-list {
-    grid-area: list;
+.history-wrapper--split .history-list {
     min-height: 0;
 }
 
-.history-chat {
-    grid-area: chat;
+.history-wrapper--split .history-chat {
     min-height: 0;
 }
 
-.history-chat--fullscreen {
+.history-wrapper--split-compact .history-list {
+    display: none;
+}
+
+.history-wrapper--split-compact .history-chat {
     position: fixed;
     inset: 0;
     z-index: 1200;
@@ -370,9 +347,17 @@ watch(
     height: 100dvh;
 }
 
-.history-chat--fullscreen :deep(.admin-chat) {
+.history-wrapper--split-compact .history-chat :deep(.admin-chat) {
     height: 100%;
     border-radius: 0;
+}
+
+.history-list {
+    min-height: 0;
+}
+
+.history-chat {
+    min-height: 0;
 }
 
 .table-sort-btn {
@@ -388,7 +373,7 @@ watch(
 }
 
 @media (max-width: 999px) {
-    .history-grid {
+    .history-wrapper--split {
         display: block;
         height: auto;
     }

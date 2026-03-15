@@ -33,6 +33,8 @@ import AppNavbar from '../components/AppNavbar.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppFooter from '../components/AppFooter.vue'
 import UserChatWidget from '../components/UserChatWidget.vue'
+import { closeAgentCommunicationStatusBeacon } from '../api/agentMonitor'
+import { closeUserCommunicationBeacon } from '../api/communication'
 import { useAuth } from '../auth'
 import { UserRole } from '../types/enums'
 
@@ -68,14 +70,24 @@ function toggleSidebar() {
     saveUserSidebarPreference(userSidebarCollapsedPreference.value)
 }
 
+function beforeUnloadHandler(): void {
+    if (auth.state.user?.role === UserRole.USER) {
+        closeUserCommunicationBeacon({ conversation_id: null })
+    } else if (auth.state.user) {
+        closeAgentCommunicationStatusBeacon()
+    }
+}
+
 onMounted(() => {
     userSidebarCollapsedPreference.value = loadUserSidebarPreference()
     updateBreakpointState()
     window.addEventListener('resize', updateBreakpointState)
+    window.addEventListener('beforeunload', beforeUnloadHandler)
 })
 
 onBeforeUnmount(() => {
     window.removeEventListener('resize', updateBreakpointState)
+    window.removeEventListener('beforeunload', beforeUnloadHandler)
 })
 </script>
 

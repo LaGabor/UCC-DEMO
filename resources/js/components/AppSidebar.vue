@@ -75,7 +75,11 @@ const navigationItems = computed(() => {
 
             return true
         })
-        .sort((a, b) => Number(a.meta?.navOrder ?? 999) - Number(b.meta?.navOrder ?? 999))
+        .sort(
+            (routeA, routeB) =>
+                Number(routeA.meta?.navOrder ?? 999) -
+                Number(routeB.meta?.navOrder ?? 999)
+        )
 })
 
 function isCurrentRoute(item: RouteRecordRaw): boolean {

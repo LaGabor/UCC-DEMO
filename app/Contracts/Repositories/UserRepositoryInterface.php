@@ -2,14 +2,19 @@
 
 namespace App\Contracts\Repositories;
 
-use App\Enums\UserRole;
 use App\Enums\Language;
+use App\Enums\UserRole;
+use App\Models\User;
 
 interface UserRepositoryInterface
 {
     public function existsByEmail(string $email): bool;
 
     public function existsActiveByEmail(string $email): bool;
+
+    public function findIdByEmail(string $email): ?int;
+
+    public function findById(int $id): ?User;
 
     public function createPendingUser(
         string $email,

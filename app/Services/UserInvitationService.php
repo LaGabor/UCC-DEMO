@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Contracts\Services\UserInvitationServiceInterface;
+use App\Contracts\Repositories\UserCommunicationRepositoryInterface;
 use App\Contracts\Repositories\UserInvitationRepositoryInterface;
 use App\Contracts\Repositories\UserRepositoryInterface;
 use App\Data\Admin\CreateUserInvitationData;
@@ -10,10 +11,14 @@ use App\Data\Public\AcceptUserInvitationData;
 use App\Data\Public\UserInvitationPayloadData;
 use App\Enums\ApiDomainErrorCode;
 use App\Enums\ApiDomainStatus;
+use App\Enums\ConversationStatus;
+use App\Enums\UserRole;
 use App\Exceptions\ApiDomainException;
 use App\Jobs\SendInvitationEmailJob;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class UserInvitationService implements UserInvitationServiceInterface
 {
@@ -22,6 +27,7 @@ class UserInvitationService implements UserInvitationServiceInterface
     public function __construct(
         private readonly UserInvitationRepositoryInterface $userInvitationRepository,
         private readonly UserRepositoryInterface $userRepository,
+        private readonly UserCommunicationRepositoryInterface $userCommunicationRepository,
     ) {
     }
 
@@ -128,6 +134,14 @@ class UserInvitationService implements UserInvitationServiceInterface
                 );
             }
 
+            $userId = $this->userRepository->findIdByEmail($record->email);
+            if ($userId !== null) {
+                $user = $this->userRepository->findById($userId);
+                if ($user && $user->role === UserRole::USER) {
+                    $this->createConversationOrFail($userId, ConversationStatus::CLOSED);
+                }
+            }
+
             $this->userInvitationRepository->deleteInvitationToken($data->token);
         });
     }
@@ -146,5 +160,24 @@ class UserInvitationService implements UserInvitationServiceInterface
         }
 
         return $configuredPassword;
+    }
+
+    private function createConversationOrFail(int $userId, ConversationStatus $status): void
+    {
+        try {
+            $this->userCommunicationRepository->createConversation($userId, $status);
+        } catch (Throwable $e) {
+            Log::error('conversation.create_failed', [
+                'user_id' => $userId,
+                'status' => $status->value,
+                'error' => $e->getMessage(),
+            ]);
+            throw new ApiDomainException(
+                ApiDomainErrorCode::INTERNAL_SERVER_ERROR,
+                'Failed to create conversation.',
+                null,
+                ApiDomainStatus::INTERNAL_SERVER_ERROR
+            );
+        }
     }
 }

@@ -44,10 +44,11 @@ class AgentMonitorConversationBroadcasted implements ShouldBroadcastNow
             'assigned_agent_id' => $this->conversation->assigned_agent_id,
             'status' => $this->conversation->status->value,
             'created_at' => $this->conversation->created_at->toIso8601String(),
-            'last_assigned_call' => $this->conversation->last_assigned_call?->toIso8601String(),
+            'last_assign_request' => $this->conversation->last_assign_request?->toIso8601String(),
             'last_assigned_at' => $this->conversation->last_assigned_at?->toIso8601String(),
             'last_closed_at' => $this->conversation->last_closed_at?->toIso8601String(),
-            'last_open_at' => $this->conversation->last_open_at?->toIso8601String(),
+            'last_open_at' => $this->conversation->last_opened_at?->toIso8601String(),
+            'last_message_at' => $this->conversation->last_message_at?->toIso8601String(),
         ];
     }
 }

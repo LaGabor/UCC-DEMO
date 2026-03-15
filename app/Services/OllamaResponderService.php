@@ -26,25 +26,25 @@ class OllamaResponderService implements LargeLanguageMessageResponderServiceInte
 
             $response->throw();
 
-            $body = $response->json();
-            $text = $response->json('response');
+            $responseBody = $response->json();
+            $responseText = $response->json('response');
 
             Log::info('communication.ollama.response', [
                 'conversation_id' => $conversation->id,
                 'user_message_id' => $userMessage->id,
                 'status' => $response->status(),
-                'raw_body' => $body,
-                'response_field' => $text,
+                'raw_body' => $responseBody,
+                'response_field' => $responseText,
             ]);
 
-            if (is_string($text) && $text !== '') {
-                return trim($text);
+            if (is_string($responseText) && $responseText !== '') {
+                return trim($responseText);
             }
 
             Log::warning('communication.ollama.empty_response', [
                 'conversation_id' => $conversation->id,
                 'user_message_id' => $userMessage->id,
-                'raw_body' => $body,
+                'raw_body' => $responseBody,
             ]);
 
             return $fallback;

@@ -2,11 +2,12 @@
 
 namespace App\Contracts\Services;
 
-use App\Data\Events\EventFiltersData;
 use App\Data\Events\EventData;
+use App\Data\Events\EventFiltersData;
 use App\Data\Events\EventListData;
-use App\Data\Events\UpsertEventData;
 use App\Data\Events\UpdateEventDescriptionData;
+use App\Data\Events\UpsertEventData;
+use App\Models\Event;
 
 interface EventServiceInterface
 {
@@ -14,10 +15,10 @@ interface EventServiceInterface
 
     public function createForUser(int $userId, UpsertEventData $data): EventData;
 
-    public function getForUser(int $userId, int $eventId): EventData;
+    public function get(Event $event): EventData;
 
-    public function updateForUser(int $userId, int $eventId, UpdateEventDescriptionData $data): EventData;
+    public function update(Event $event, UpdateEventDescriptionData $data): EventData;
 
-    public function deleteForUser(int $userId, int $eventId): void;
+    public function delete(Event $event): void;
 }
 

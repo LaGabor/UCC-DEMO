@@ -26,6 +26,20 @@ class UserRepository implements UserRepositoryInterface
             ->exists();
     }
 
+    public function findIdByEmail(string $email): ?int
+    {
+        $id = User::query()
+            ->where('email', $email)
+            ->value('id');
+
+        return $id !== null ? (int) $id : null;
+    }
+
+    public function findById(int $id): ?User
+    {
+        return User::query()->find($id);
+    }
+
     public function createPendingUser(
         string $email,
         UserRole $role,

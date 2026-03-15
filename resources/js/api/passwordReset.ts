@@ -24,7 +24,7 @@ export async function completePasswordReset(
         password_confirmation: string
     }
 ): Promise<void> {
-    await apiClient.post(
+    await apiClient.patch(
         `/api/public/password-reset-requests/${encodeURIComponent(token)}/complete`,
         payload
     )
