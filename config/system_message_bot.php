@@ -25,6 +25,8 @@ return [
         'sign out' => [['scope' => 'logout', 'lang' => 'en']],
         'exit' => [['scope' => 'logout', 'lang' => 'en']],
 
+        'ugyintezot' => [['scope' => 'call_agent', 'lang' => 'hu']],
+        'ketlepcsos' => [['scope' => 'two_factor_setup', 'lang' => 'hu']],
         'kettenyezos' => [['scope' => 'two_factor_setup', 'lang' => 'hu']],
         'ketfaktoros' => [['scope' => 'two_factor_setup', 'lang' => 'hu'], ['scope' => 'recovery_codes', 'lang' => 'hu'], ['scope' => 'disable_2fa', 'lang' => 'hu']],
         '2fa' => [['scope' => 'two_factor_setup', 'lang' => 'hu'], ['scope' => 'two_factor_setup', 'lang' => 'en'], ['scope' => 'disable_2fa', 'lang' => 'hu'], ['scope' => 'disable_2fa', 'lang' => 'en']],
@@ -72,6 +74,9 @@ return [
         'feliratkozas' => [['scope' => 'registration', 'lang' => 'hu']],
         'meghivo' => [['scope' => 'registration', 'lang' => 'hu']],
         'meghivas' => [['scope' => 'registration', 'lang' => 'hu']],
+        'meghivot' => [['scope' => 'registration', 'lang' => 'hu']],
+        'meg szeretnek' => [['scope' => 'registration', 'lang' => 'hu']],
+        'hivni' => [['scope' => 'registration', 'lang' => 'hu']],
         'registration' => [['scope' => 'registration', 'lang' => 'en']],
         'register' => [['scope' => 'registration', 'lang' => 'en']],
         'sign up' => [['scope' => 'registration', 'lang' => 'en']],
@@ -91,6 +96,8 @@ return [
         'talk to someone' => [['scope' => 'call_agent', 'lang' => 'en']],
         'representative' => [['scope' => 'call_agent', 'lang' => 'en']],
 
+        'lepcsos' => [['scope' => 'two_factor_setup', 'lang' => 'hu']],
+        'azonositas' => [['scope' => 'two_factor_setup', 'lang' => 'hu']],
         'esemeny' => [['scope' => 'events', 'lang' => 'hu']],
         'esemenyek' => [['scope' => 'events', 'lang' => 'hu']],
         'event' => [['scope' => 'events', 'lang' => 'hu'], ['scope' => 'events', 'lang' => 'en']],
